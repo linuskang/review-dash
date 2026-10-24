@@ -51,6 +51,15 @@ export interface PrComment {
     association: string;
 }
 
+export interface PrEvent {
+    id: number;
+    event: string;
+    actor: string;
+    avatarUrl: string;
+    label: string | null;
+    createdAt: string;
+}
+
 export interface CheckRun {
     id: number;
     name: string;

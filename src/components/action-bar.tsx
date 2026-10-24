@@ -289,7 +289,7 @@ export default function ActionBar({
                         disabled={busy === "merge" || mergeBlocked}
                     >
                         {busy === "merge"
-                            ? "Merging�?�"
+                            ? "Merging…"
                             : mergeBlocked
                               ? "Blocked"
                               : "Confirm merge"}
@@ -306,9 +306,12 @@ export default function ActionBar({
                 onConfirm={(reasonLabels, comment) =>
                     run("close", async () => {
                         const toAdd = Array.from(new Set([...reasonLabels, "status: denied"]));
+                        const toRemove = (pr.labels || [])
+                            .map((l) => l.name)
+                            .filter((n) => n.startsWith("status:") && n !== "status: denied");
                         await api(`/api/pr/${pr.number}/labels`, {
                             method: "POST",
-                            body: JSON.stringify({ add: toAdd }),
+                            body: JSON.stringify({ add: toAdd, remove: toRemove }),
                         });
                         onLabelsChanged(toAdd);
                         await api(`/api/pr/${pr.number}/close`, {

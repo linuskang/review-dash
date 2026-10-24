@@ -33,15 +33,17 @@ import RestartAltRounded from "@mui/icons-material/RestartAltRounded";
 import { api, timeAgo } from "@/lib/client";
 import { DEFAULT_CANNED, loadCanned, resetCanned, saveCanned } from "@/lib/canned";
 import Markdown from "./markdown";
-import type { CannedResponse, PrComment } from "@/lib/types";
+import type { CannedResponse, PrComment, PrEvent } from "@/lib/types";
 
 export default function CommentsTab({
     prNumber,
     comments,
+    events,
     onRefresh,
 }: {
     prNumber: number;
     comments: PrComment[] | null;
+    events?: PrEvent[] | null;
     onRefresh: () => void;
 }) {
     const [draft, setDraft] = useState("");
@@ -76,63 +78,86 @@ export default function CommentsTab({
         <Stack spacing={2.5}>
             {/* Timeline */}
             <Stack spacing={1.5}>
-                {comments === null ? (
+                {comments === null && events === null ? (
                     <Typography sx={{
                         color: "text.secondary"
-                   }}>Loading comments…</Typography>
-                ) : comments.length === 0 ? (
+                    }}>Loading…</Typography>
+                ) : (comments?.length ?? 0) === 0 && (events?.length ?? 0) === 0 ? (
                     <Typography sx={{
                         color: "text.secondary"
-                   }}>No comments yet.</Typography>
+                    }}>No activity yet.</Typography>
                 ) : (
-                    comments.map((c) => (
-                        <Card
-                            key={c.id}
-                                                        sx={{ bgcolor: "surfaceContainerLow", }}
-                        >
-                            <CardContent sx={{ p: 2, "&:last-child": { pb: 2 } }}>
-                                <Stack
-                                    direction="row"
-                                    spacing={1.25}
-                                    sx={{
-                                        alignItems: "center",
-                                        mb: 1
-                                   }}>
-                                    <Avatar src={c.avatarUrl} sx={{ width: 28, height: 28 }} />
-                                    <Typography variant="subtitle2">{c.author}</Typography>
-                                    {c.isBot && (
-                                        <Chip
-                                            size="small"
-                                            icon={<SmartToyRounded sx={{ fontSize: 14 }} />}
-                                            label="bot"
-                                            sx={{ height: 20, fontSize: 11 }}
-                                        />
-                                    )}
-                                    {["MEMBER", "COLLABORATOR", "OWNER"].includes(c.association) && (
-                                        <Chip
-                                            size="small"
-                                            label={c.association.toLowerCase()}
-                                            sx={{
-                                                height: 20,
-                                                fontSize: 11,
-                                                bgcolor: "primaryContainer",
-                                                color: "onPrimaryContainer",
-                                           }}
-                                        />
-                                    )}
-                                    <Typography
-                                        variant="caption"
+                    buildTimeline(comments ?? [], events ?? []).map((item) =>
+                        item.type === "comment" ? (
+                            <Card
+                                key={`c-${item.data.id}`}
+                                sx={{ bgcolor: "surfaceContainerLow", }}
+                            >
+                                <CardContent sx={{ p: 2, "&:last-child": { pb: 2 } }}>
+                                    <Stack
+                                        direction="row"
+                                        spacing={1.25}
                                         sx={{
-                                            color: "text.secondary",
-                                            ml: "auto"
-                                       }}>
-                                        {timeAgo(c.createdAt)}
-                                    </Typography>
-                                </Stack>
-                                <Markdown>{c.body}</Markdown>
-                            </CardContent>
-                        </Card>
-                    ))
+                                            alignItems: "center",
+                                            mb: 1
+                                        }}>
+                                        <Avatar src={item.data.avatarUrl} sx={{ width: 28, height: 28 }} />
+                                        <Typography variant="subtitle2">{item.data.author}</Typography>
+                                        {item.data.isBot && (
+                                            <Chip
+                                                size="small"
+                                                icon={<SmartToyRounded sx={{ fontSize: 14 }} />}
+                                                label="bot"
+                                                sx={{ height: 20, fontSize: 11 }}
+                                            />
+                                        )}
+                                        {["MEMBER", "COLLABORATOR", "OWNER"].includes(item.data.association) && (
+                                            <Chip
+                                                size="small"
+                                                label={item.data.association.toLowerCase()}
+                                                sx={{
+                                                    height: 20,
+                                                    fontSize: 11,
+                                                    bgcolor: "primaryContainer",
+                                                    color: "onPrimaryContainer",
+                                                }}
+                                            />
+                                        )}
+                                        <Typography
+                                            variant="caption"
+                                            sx={{
+                                                color: "text.secondary",
+                                                ml: "auto"
+                                            }}>
+                                            {timeAgo(item.data.createdAt)}
+                                        </Typography>
+                                    </Stack>
+                                    <Markdown>{item.data.body}</Markdown>
+                                </CardContent>
+                            </Card>
+                        ) : (
+                            <Stack
+                                key={`e-${item.data.id}`}
+                                direction="row"
+                                spacing={1}
+                                sx={{
+                                    alignItems: "center",
+                                    px: 1.5,
+                                    py: 0.75,
+                                    borderRadius: "12px",
+                                    bgcolor: "surfaceContainerLow",
+                                }}
+                            >
+                                <Avatar src={item.data.avatarUrl} sx={{ width: 20, height: 20 }} />
+                                <Typography variant="caption" sx={{ color: "text.secondary", flex: 1 }}>
+                                    <b>{item.data.actor}</b> {describeEvent(item.data)}
+                                </Typography>
+                                <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                                    {timeAgo(item.data.createdAt)}
+                                </Typography>
+                            </Stack>
+                        ),
+                    )
                 )}
             </Stack>
 
@@ -344,4 +369,32 @@ function CannedManager({
             </DialogActions>
         </Dialog>
     );
+}
+function buildTimeline(comments: PrComment[], events: PrEvent[]) {
+    const items: { type: "comment" | "event"; data: any; date: string }[] = [];
+    for (const c of comments) items.push({ type: "comment", data: c, date: c.createdAt });
+    for (const e of events) items.push({ type: "event", data: e, date: e.createdAt });
+    items.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    return items;
+}
+
+function describeEvent(e: PrEvent): string {
+    switch (e.event) {
+        case "labeled":
+            return `added label ${e.label ?? ""}`;
+        case "unlabeled":
+            return `removed label ${e.label ?? ""}`;
+        case "closed":
+            return "closed this PR";
+        case "reopened":
+            return "reopened this PR";
+        case "merged":
+            return "merged this PR";
+        case "assigned":
+            return "assigned this PR";
+        case "cross-referenced":
+            return "cross-referenced this PR";
+        default:
+            return e.event.replace(/_/g, " ");
+    }
 }

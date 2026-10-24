@@ -37,6 +37,7 @@ import type {
     ChecksPayload,
     PrComment,
     PrDetail,
+    PrEvent,
     PrFile,
     PrLabel,
 } from "@/lib/types";
@@ -111,6 +112,7 @@ export default function ReviewPanel({
 }) {
     const [files, setFiles] = useState<PrFile[] | null>(null);
     const [comments, setComments] = useState<PrComment[] | null>(null);
+    const [events, setEvents] = useState<PrEvent[] | null>(null);
     const [checks, setChecks] = useState<ChecksPayload | null>(null);
     const [labelsOpen, setLabelsOpen] = useState(false);
     const [showRaw, setShowRaw] = useState(false);
@@ -125,6 +127,10 @@ export default function ReviewPanel({
         api<PrComment[]>(`/api/pr/${prNumber}/comments`).then(setComments).catch(() => setComments([]));
     }, [prNumber]);
 
+    const loadEvents = useCallback(() => {
+        api<PrEvent[]>(`/api/pr/${prNumber}/events`).then(setEvents).catch(() => setEvents([]));
+    }, [prNumber]);
+
     const loadChecks = useCallback(() => {
         api<ChecksPayload>(`/api/pr/${prNumber}/checks`).then(setChecks).catch(() => {});
     }, [prNumber]);
@@ -132,12 +138,14 @@ export default function ReviewPanel({
     useEffect(() => {
         setFiles(null);
         setComments(null);
+        setEvents(null);
         setChecks(null);
         setShowRaw(false);
         loadFiles();
         loadComments();
+        loadEvents();
         loadChecks();
-    }, [prNumber, loadFiles, loadComments, loadChecks]);
+    }, [prNumber, loadFiles, loadComments, loadEvents, loadChecks]);
 
     useEffect(() => {
         if (!checks) return;
@@ -457,7 +465,7 @@ export default function ReviewPanel({
                                     <Typography variant="subtitle2" sx={{ color: "text.secondary", fontWeight: 700, mb: 1, px: 0.5 }}>
                                         Comments
                                     </Typography>
-                                    <CommentsTab prNumber={prNumber} comments={comments} onRefresh={loadComments} />
+                                    <CommentsTab prNumber={prNumber} comments={comments} events={events} onRefresh={() => { loadComments(); loadEvents(); }} />
                                 </Box>
                             </Stack>
                         </Box>
