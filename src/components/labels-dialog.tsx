@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
     Box,
     Button,
@@ -9,6 +9,7 @@ import {
     DialogActions,
     DialogContent,
     DialogTitle,
+    TextField,
     Typography,
 } from "@mui/material";
 import { api } from "@/lib/client";
@@ -37,25 +38,32 @@ export default function LabelsDialog({
     const [all, setAll] = useState<RepoLabel[] | null>(null);
     const [selected, setSelected] = useState<Set<string>>(new Set());
     const [saving, setSaving] = useState(false);
+    const [query, setQuery] = useState("");
+    const searchRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         if (open) {
             setSelected(new Set(current.map((l) => l.name)));
+            setQuery("");
             if (!all) {
                 api<RepoLabel[]>("/api/labels").then(setAll).catch(() => setAll([]));
             }
+            setTimeout(() => searchRef.current?.focus(), 100);
         }
     }, [open, current, all]);
 
     const grouped = useMemo(() => {
         if (!all) return [];
+        const q = query.trim().toLowerCase();
         const used = new Set<string>();
         return GROUPS.map(([title, match]) => {
-            const items = all.filter((l) => !used.has(l.name) && match(l.name));
+            const items = all.filter(
+                (l) => !used.has(l.name) && match(l.name) && (q === "" || l.name.toLowerCase().includes(q)),
+            );
             items.forEach((l) => used.add(l.name));
             return { title, items };
         }).filter((g) => g.items.length > 0);
-    }, [all]);
+    }, [all, query]);
 
     const toggle = (name: string) =>
         setSelected((prev) => {
@@ -86,6 +94,16 @@ export default function LabelsDialog({
         <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
             <DialogTitle>Edit labels</DialogTitle>
             <DialogContent dividers>
+                <TextField
+                    inputRef={searchRef}
+                    autoFocus
+                    fullWidth
+                    size="small"
+                    placeholder="Search labels…"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    sx={{ mb: 2 }}
+                />
                 {!all ? (
                     <Typography sx={{
                         color: "text.secondary"

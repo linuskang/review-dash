@@ -20,7 +20,7 @@ export default function LabelChip({
                 fontWeight: 600,
                 fontSize: size === "small" ? 11 : 12.5,
                 height: size === "small" ? 22 : 28,
-                borderRadius: "8px",
+                borderRadius: "10px",
                 ...rest.sx,
             }}
         />

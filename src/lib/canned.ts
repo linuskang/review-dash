@@ -73,6 +73,12 @@ export const DEFAULT_CANNED: CannedResponse[] = [
         body: "This request has a high risk of being abused (e.g. phishing-like subdomain or content), so we can't approve it. Closing this PR.",
     },
     {
+        id: "tos-non-compliant",
+        title: "TOS non-compliant",
+        reasonLabel: "reason: tos non-compliant",
+        body: "Your request doesn't comply with our [Terms of Service](https://is-a.dev/terms), so we can't approve this. Closing this PR.",
+    },
+    {
         id: "nsfw",
         title: "NSFW content",
         reasonLabel: "reason: nsfw",
@@ -81,7 +87,6 @@ export const DEFAULT_CANNED: CannedResponse[] = [
     {
         id: "needs-preview",
         title: "Needs preview link",
-        reasonLabel: "status: needs preview",
         body: "Please provide a **link** (not a screenshot) to your currently-live website in the Website Preview section of the PR template (e.g. `https://you.github.io` or `https://you.vercel.app`), between the start/end markers.",
     },
     {
@@ -92,8 +97,13 @@ export const DEFAULT_CANNED: CannedResponse[] = [
     {
         id: "awaiting-response",
         title: "Awaiting user response",
-        reasonLabel: "status: awaiting user response",
         body: "Please address the points above and reply here once done and I'll take another look. 👍",
+    },
+    {
+        id: "other",
+        title: "Other",
+        reasonLabel: "reason: other",
+        body: "",
     },
 ];
 

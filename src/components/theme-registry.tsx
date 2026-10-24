@@ -160,7 +160,7 @@ function buildTheme(mode: PaletteMode): Theme {
         },
         shape: { borderRadius: 16 },
         typography: {
-            fontFamily: `"Roboto Flex", "Google Sans", "Segoe UI", system-ui, sans-serif`,
+            fontFamily: `var(--font-google-sans), "Roboto Flex", "Segoe UI", system-ui, sans-serif`,
             h4: { fontWeight: 550, letterSpacing: -0.25 },
             h5: { fontWeight: 550, letterSpacing: -0.15 },
             h6: { fontWeight: 600, letterSpacing: -0.1 },

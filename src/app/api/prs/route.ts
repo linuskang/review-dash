@@ -16,11 +16,18 @@ export const GET = withAuth(async (_req, { session }) => {
             let checks: { total: number; passed: number; failed: number; pending: number } | undefined;
             let commentsCount = 0;
             try {
-                const res = await gh<{ check_runs?: { status: string; conclusion: string | null }[] }>(
+                const res = await gh<{ check_runs?: { id: number; name: string; status: string; conclusion: string | null }[] }>(
                     session.token,
                     `/repos/${REPO}/commits/${head?.sha}/check-runs`,
                 );
-                const runs = (res.data?.check_runs ?? []) as { status: string; conclusion: string | null }[];
+                const raw = (res.data?.check_runs ?? []) as { id: number; name: string; status: string; conclusion: string | null }[];
+                // Keep only the most recent run per name (reruns create new check runs).
+                const latest = new Map<string, { id: number; name: string; status: string; conclusion: string | null }>();
+                for (const r of raw) {
+                    const prev = latest.get(r.name);
+                    if (!prev || r.id > prev.id) latest.set(r.name, r);
+                }
+                const runs = Array.from(latest.values());
                 checks = {
                     total: runs.length,
                     passed: runs.filter(

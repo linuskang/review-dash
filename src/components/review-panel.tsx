@@ -5,27 +5,34 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
     Avatar,
     Box,
+    Button,
+    Card,
     Chip,
+    Collapse,
+    Divider,
     IconButton,
     Link,
     Skeleton,
     Stack,
-    Tab,
-    Tabs,
     Tooltip,
     Typography,
 } from "@mui/material";
 import OpenInNewRounded from "@mui/icons-material/OpenInNewRounded";
 import RefreshRounded from "@mui/icons-material/RefreshRounded";
 import LocalOfferRounded from "@mui/icons-material/LocalOfferRounded";
+import CheckCircleRounded from "@mui/icons-material/CheckCircleRounded";
+import CancelRounded from "@mui/icons-material/CancelRounded";
+import HelpOutlineRounded from "@mui/icons-material/HelpOutlineRounded";
+import ExpandMoreRounded from "@mui/icons-material/ExpandMoreRounded";
 import { api, timeAgo } from "@/lib/client";
+import { parsePrBody } from "@/lib/parse";
 import LabelChip from "./label-chip";
 import LabelsDialog from "./labels-dialog";
-import OverviewTab from "./overview-tab";
 import FilesTab from "./files-tab";
 import ChecksTab from "./checks-tab";
 import CommentsTab from "./comments-tab";
 import ActionBar from "./action-bar";
+import Markdown from "./markdown";
 import type {
     ChecksPayload,
     PrComment,
@@ -35,6 +42,43 @@ import type {
 } from "@/lib/types";
 
 type Notify = (message: string, severity?: "success" | "error" | "info") => void;
+
+function StatusPill({
+    label,
+    ok,
+}: {
+    label: string;
+    ok: boolean | null;
+}) {
+    const color =
+        ok === null
+            ? "surfaceContainerHigh"
+            : ok
+              ? "successContainer"
+              : "errorContainer";
+    const textColor =
+        ok === null
+            ? "onSurfaceVariant"
+            : ok
+              ? "onSuccessContainer"
+              : "onErrorContainer";
+    const Icon = ok === null ? HelpOutlineRounded : ok ? CheckCircleRounded : CancelRounded;
+    return (
+        <Chip
+            size="small"
+            icon={<Icon sx={{ fontSize: 14 }} />}
+            label={label}
+            sx={{
+                bgcolor: color,
+                color: textColor,
+                fontWeight: 600,
+                height: 26,
+                borderRadius: "999px",
+                "& .MuiChip-icon": { color: textColor },
+            }}
+        />
+    );
+}
 
 export default function ReviewPanel({
     prNumber,
@@ -54,8 +98,8 @@ export default function ReviewPanel({
     const [files, setFiles] = useState<PrFile[] | null>(null);
     const [comments, setComments] = useState<PrComment[] | null>(null);
     const [checks, setChecks] = useState<ChecksPayload | null>(null);
-    const [tab, setTab] = useState(0);
     const [labelsOpen, setLabelsOpen] = useState(false);
+    const [showRaw, setShowRaw] = useState(false);
     const refreshRef = useRef(onRefreshPr);
     refreshRef.current = onRefreshPr;
 
@@ -75,13 +119,12 @@ export default function ReviewPanel({
         setFiles(null);
         setComments(null);
         setChecks(null);
-        setTab(0);
+        setShowRaw(false);
         loadFiles();
         loadComments();
         loadChecks();
     }, [prNumber, loadFiles, loadComments, loadChecks]);
 
-    // Poll CI while anything is running or waiting.
     useEffect(() => {
         if (!checks) return;
         const active =
@@ -92,7 +135,6 @@ export default function ReviewPanel({
         return () => clearInterval(id);
     }, [checks, loadChecks]);
 
-    // Refresh PR detail when checks finish so mergeability updates.
     useEffect(() => {
         if (!checks) return;
         if (checks.checkRuns.some((c) => c.status !== "completed")) return;
@@ -105,16 +147,37 @@ export default function ReviewPanel({
         refreshRef.current();
     }, [checks]);
 
-    // Resolve mergeability if GitHub is still computing.
     useEffect(() => {
         if (!pr || pr.mergeable !== null) return;
         const id = setTimeout(() => refreshRef.current(), 2000);
         return () => clearTimeout(id);
     }, [pr]);
 
-    const onLabelsSaved = (labels: PrLabel[]) => {
+    const onLabelsSaved = () => {
         onRefreshPr();
     };
+
+    const parsed = pr ? parsePrBody(pr.body) : null;
+    const checkedCount = parsed ? parsed.requirements.filter((r) => r.checked).length : 0;
+    const allChecked =
+        !!parsed && parsed.requirements.length > 0 && checkedCount === parsed.requirements.length;
+
+    const hasBypass = !!pr?.labels.some((l) => /bypass/i.test(l.name));
+    const templateOk = allChecked || hasBypass;
+
+    const previewOk = !!parsed?.previewUrl;
+    const jsonReq = parsed?.requirements.find((r) => /json/i.test(r.label));
+    const jsonOk = jsonReq ? jsonReq.checked : null;
+
+    const ciFailing = !!checks?.checkRuns.some(
+        (c) => c.status === "completed" && c.conclusion && !["success", "neutral", "skipped"].includes(c.conclusion),
+    );
+    const ciPending = !!checks?.checkRuns.some((c) => c.status !== "completed");
+    const ciOk = checks ? !ciFailing && !ciPending && checks.checkRuns.length > 0 : null;
+
+    const validOk = pr ? pr.mergeable !== false && !ciFailing : null;
+
+    const cardSx = { bgcolor: "surfaceContainerLow", borderRadius: "28px", p: 2.5 };
 
     return (
         <AnimatePresence mode="wait">
@@ -124,155 +187,264 @@ export default function ReviewPanel({
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -24 }}
                 transition={{ type: "spring", stiffness: 300, damping: 32 }}
-                style={{ height: "100%", display: "flex", flexDirection: "column" }}
+                style={{ height: "100%", display: "flex", flexDirection: "column", minHeight: 0 }}
             >
                 {!pr ? (
                     <Stack spacing={2} sx={{ p: 1 }}>
-                        <Skeleton variant="rounded" height={130} sx={{ borderRadius: "28px" }} />
+                        <Skeleton variant="rounded" height={120} sx={{ borderRadius: "28px" }} />
                         <Skeleton variant="rounded" height={320} sx={{ borderRadius: "28px" }} />
                     </Stack>
                 ) : (
                     <>
-                        {/* Header */}
-                        <Box
-                            sx={{
-                                bgcolor: "surfaceContainerLow",
-                                borderRadius: "28px",
-                                p: 2.5,
-                                mb: 2,
-                            }}
-                        >
-                            <Stack direction="row" spacing={2} sx={{
-                                alignItems: "flex-start"
-                            }}>
-                                <Avatar src={pr.avatarUrl} sx={{ width: 44, height: 44 }} />
-                                <Box sx={{ flex: 1, minWidth: 0 }}>
-                                    <Stack direction="row" spacing={1} sx={{
-                                        alignItems: "center"
-                                    }}>
-                                        <Typography
-                                            variant="h5"
-                                            noWrap
-                                            title={pr.title}
-                                            sx={{ flex: 1, minWidth: 0 }}
-                                        >
-                                            {pr.title}
-                                        </Typography>
-                                        <Tooltip title="Open on GitHub">
-                                            <IconButton href={pr.htmlUrl} target="_blank" size="small">
-                                                <OpenInNewRounded fontSize="small" />
-                                            </IconButton>
-                                        </Tooltip>
-                                        <Tooltip title="Refresh">
-                                            <IconButton
-                                                size="small"
-                                                onClick={() => {
-                                                    onRefreshPr();
-                                                    loadChecks();
-                                                }}
+                        <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", pr: 0.5 }}>
+                            <Stack spacing={2} sx={{ p: 1, pb: 2 }}>
+                                {/* Header card */}
+                                <Card sx={cardSx}>
+                                    <Stack direction="row" spacing={2} sx={{ alignItems: "center", mb: 1.5 }}>
+                                        <Avatar src={pr.avatarUrl} sx={{ width: 56, height: 56 }} />
+                                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                                            <Typography variant="h5" noWrap title={pr.author}>
+                                                {pr.author}
+                                            </Typography>
+                                            <Typography
+                                                variant="body2"
+                                                sx={{ color: "text.secondary", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                                                title={pr.title}
                                             >
-                                                <RefreshRounded fontSize="small" />
-                                            </IconButton>
-                                        </Tooltip>
-                                    </Stack>
-                                    <Typography
-                                        variant="body2"
-                                        noWrap
-                                        title={`${pr.author} · #${pr.number} ·  · +${pr.additions} −${pr.deletions} · ${pr.changedFiles} file${pr.changedFiles === 1 ? "" : "s"}`}
-                                        sx={{ color: "text.secondary", overflow: "hidden", textOverflow: "ellipsis" }}
-                                    >
-                                        <Link
-                                            href={`https://github.com/${pr.author}`}
+                                                {pr.title}
+                                            </Typography>
+                                        </Box>
+                                        <Button
+                                            variant="contained"
+                                            size="small"
+                                            href={pr.htmlUrl}
                                             target="_blank"
-                                            color="inherit"
-                                            underline="hover"
+                                            rel="noreferrer"
+                                            startIcon={<OpenInNewRounded />}
+                                            sx={{ borderRadius: "999px", flexShrink: 0 }}
                                         >
-                                            {pr.author}
-                                        </Link>{" "}
-                                        · #{pr.number} · opened {timeAgo(pr.createdAt)} ·{" "}
-                                        ·{" "}
-                                        <Box component="span" sx={{ color: "success.main", fontWeight: 600 }}>
-                                            +{pr.additions}
-                                        </Box>{" "}
-                                        <Box component="span" sx={{ color: "error.main", fontWeight: 600 }}>
-                                            −{pr.deletions}
-                                        </Box>{" "}
-                                        · {pr.changedFiles} file{pr.changedFiles === 1 ? "" : "s"}
-                                    </Typography>
+                                            Open on GitHub
+                                        </Button>
+                                    </Stack>
+
                                     <Stack
                                         direction="row"
-                                        spacing={0.75}
+                                        spacing={1.5}
                                         useFlexGap
-                                        sx={{
-                                            flexWrap: "wrap",
-                                            alignItems: "center",
-                                            mt: 1.25
-                                        }}>
-                                        {pr.labels.map((l) => (
-                                            <LabelChip key={l.name} label={l} onClick={() => setLabelsOpen(true)} />
-                                        ))}
-                                        <Chip
-                                            size="small"
-                                            icon={<LocalOfferRounded sx={{ fontSize: 14 }} />}
-                                            label={pr.labels.length ? "Edit labels" : "Add labels"}
-                                            variant="outlined"
-                                            onClick={() => setLabelsOpen(true)}
-                                            sx={{ borderStyle: "dashed", fontWeight: 600 }}
-                                        />
+                                        sx={{ flexWrap: "wrap", alignItems: "center", mb: 2 }}
+                                    >
+                                        <Typography variant="caption" sx={{ fontWeight: 800 }}>
+                                            #{pr.number}
+                                        </Typography>
+                                        <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                                            opened {timeAgo(pr.createdAt)}
+                                        </Typography>
+                                        <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                                            {pr.changedFiles} file{pr.changedFiles === 1 ? "" : "s"} changed
+                                        </Typography>
+                                        <Typography variant="caption" sx={{ color: "success.main", fontWeight: 700 }}>
+                                            +{pr.additions}
+                                        </Typography>
+                                        <Typography variant="caption" sx={{ color: "error.main", fontWeight: 700 }}>
+                                            −{pr.deletions}
+                                        </Typography>
                                     </Stack>
+
+                                    <Stack
+                                        direction="row"
+                                        spacing={1}
+                                        useFlexGap
+                                        sx={{ flexWrap: "wrap" }}
+                                    >
+                                        <StatusPill label="Template check" ok={templateOk} />
+                                        <StatusPill label="Website preview" ok={previewOk} />
+                                        {jsonReq && <StatusPill label="JSON valid" ok={jsonOk} />}
+                                        <StatusPill label="Checks" ok={ciOk} />
+                                        <StatusPill label="Valid" ok={validOk} />
+                                    </Stack>
+                                </Card>
+
+                                {/* Website + purpose card */}
+                                <Card sx={cardSx}>
+                                    <Stack spacing={1.5}>
+                                        <Box>
+                                            <Typography variant="subtitle2" sx={{ color: "text.secondary", fontWeight: 700, mb: 0.5 }}>
+                                                Website preview
+                                            </Typography>
+                                            {parsed?.previewUrl ? (
+                                                <Link href={parsed.previewUrl} target="_blank" underline="hover" noWrap sx={{ display: "block", overflow: "hidden", textOverflow: "ellipsis" }}>
+                                                    {parsed.previewUrl}
+                                                </Link>
+                                            ) : (
+                                                <Typography variant="body2" sx={{ color: "error.main" }}>
+                                                    No preview link found.
+                                                </Typography>
+                                            )}
+                                        </Box>
+                                        <Divider />
+                                        <Box>
+                                            <Typography variant="subtitle2" sx={{ color: "text.secondary", fontWeight: 700, mb: 0.5 }}>
+                                                Website purpose
+                                            </Typography>
+                                            {parsed?.purpose ? (
+                                                <Markdown>{parsed.purpose}</Markdown>
+                                            ) : (
+                                                <Typography variant="body2" sx={{ color: "error.main" }}>
+                                                    No purpose provided.
+                                                </Typography>
+                                            )}
+                                        </Box>
+                                        <Divider />
+                                        <Box>
+                                            <Stack
+                                                direction="row"
+                                                onClick={() => setShowRaw((s) => !s)}
+                                                sx={{ alignItems: "center", cursor: "pointer", userSelect: "none", py: 0.5, color: "text.secondary", "&:hover": { color: "text.primary" } }}
+                                            >
+                                                <Typography variant="subtitle2" sx={{ flex: 1, fontWeight: 700, color: "inherit" }}>
+                                                    Full description
+                                                </Typography>
+                                                <ExpandMoreRounded fontSize="small" sx={{ transform: showRaw ? "rotate(180deg)" : "none", transition: "transform 200ms" }} />
+                                            </Stack>
+                                            <Collapse in={showRaw}>
+                                                <Box sx={{ pt: 1 }}>
+                                                    <Markdown>{pr.body || "_No description._"}</Markdown>
+                                                </Box>
+                                            </Collapse>
+                                        </Box>
+                                    </Stack>
+                                </Card>
+
+                                {/* Labels card */}
+                                <Card sx={cardSx}>
+                                    <Stack direction="row" spacing={1} sx={{ alignItems: "center", mb: 1.25 }}>
+                                        <Typography variant="subtitle2" sx={{ color: "text.secondary", fontWeight: 700, flex: 1 }}>
+                                            Labels
+                                        </Typography>
+                                        <Button
+                                            variant="tonal"
+                                            size="small"
+                                            startIcon={<LocalOfferRounded />}
+                                            onClick={() => setLabelsOpen(true)}
+                                            sx={{ minHeight: 32 }}
+                                        >
+                                            {pr.labels.length ? "Edit labels" : "Add labels"}
+                                        </Button>
+                                    </Stack>
+                                    <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
+                                        {pr.labels.length === 0 ? (
+                                            <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                                                No labels.
+                                            </Typography>
+                                        ) : (
+                                            pr.labels.map((l) => (
+                                                <LabelChip key={l.name} label={l} onClick={() => setLabelsOpen(true)} />
+                                            ))
+                                        )}
+                                    </Stack>
+                                </Card>
+
+                                {/* Requirements card */}
+                                <Card sx={cardSx}>
+                                    <Stack direction="row" spacing={1} sx={{ alignItems: "center", mb: 1.25 }}>
+                                        <Typography variant="subtitle2" sx={{ color: "text.secondary", fontWeight: 700, flex: 1 }}>
+                                            Requirements
+                                        </Typography>
+                                        {hasBypass && (
+                                            <Chip
+                                                size="small"
+                                                label="Bypassed"
+                                                sx={{
+                                                    bgcolor: "tertiaryContainer",
+                                                    color: "onTertiaryContainer",
+                                                    fontWeight: 700,
+                                                    height: 22,
+                                                }}
+                                            />
+                                        )}
+                                        {parsed && parsed.requirements.length > 0 && (
+                                            <Chip
+                                                size="small"
+                                                label={`${checkedCount}/${parsed.requirements.length}`}
+                                                sx={{
+                                                    fontWeight: 700,
+                                                    height: 22,
+                                                    bgcolor: allChecked || hasBypass ? "successContainer" : "errorContainer",
+                                                    color: allChecked || hasBypass ? "onSuccessContainer" : "onErrorContainer",
+                                                }}
+                                            />
+                                        )}
+                                    </Stack>
+                                    {parsed && parsed.requirements.length === 0 ? (
+                                        <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                                            No requirement checkboxes found.
+                                        </Typography>
+                                    ) : (
+                                        <Stack spacing={0.25}>
+                                            {parsed?.requirements.map((r, i) => (
+                                                <Stack
+                                                    key={i}
+                                                    direction="row"
+                                                    spacing={1}
+                                                    sx={{
+                                                        alignItems: "center",
+                                                        px: 1,
+                                                        py: 0.5,
+                                                        borderRadius: "10px",
+                                                        bgcolor: r.checked ? "transparent" : "errorContainer",
+                                                    }}
+                                                >
+                                                    {r.checked ? (
+                                                        <CheckCircleRounded sx={{ fontSize: 17, color: "success.main" }} />
+                                                    ) : (
+                                                        <CancelRounded sx={{ fontSize: 17, color: "onErrorContainer" }} />
+                                                    )}
+                                                    <Typography variant="body2">{r.label}</Typography>
+                                                </Stack>
+                                            ))}
+                                        </Stack>
+                                    )}
+                                </Card>
+
+                                {/* Checks */}
+                                <Box>
+                                    <Typography variant="subtitle2" sx={{ color: "text.secondary", fontWeight: 700, mb: 1, px: 0.5 }}>
+                                        Checks
+                                    </Typography>
+                                    <ChecksTab prNumber={prNumber} checks={checks} onRefresh={loadChecks} />
+                                </Box>
+
+                                {/* Files */}
+                                <Box>
+                                    <Typography variant="subtitle2" sx={{ color: "text.secondary", fontWeight: 700, mb: 1, px: 0.5 }}>
+                                        Files changed
+                                    </Typography>
+                                    <FilesTab files={files} />
+                                </Box>
+
+                                {/* Comments */}
+                                <Box>
+                                    <Typography variant="subtitle2" sx={{ color: "text.secondary", fontWeight: 700, mb: 1, px: 0.5 }}>
+                                        Comments
+                                    </Typography>
+                                    <CommentsTab prNumber={prNumber} comments={comments} onRefresh={loadComments} />
                                 </Box>
                             </Stack>
                         </Box>
 
-                        {/* Tabs */}
-                        <Tabs
-                            value={tab}
-                            onChange={(_, v) => setTab(v)}
-                            sx={{ px: 1, minHeight: 44 }}
-                        >
-                            <Tab label="Overview" />
-                            <Tab label={`Files ${files ? `(${files.length})` : ""}`} />
-                            <Tab
-                                label={
-                                    <Stack direction="row" spacing={0.75} sx={{
-                                        alignItems: "center"
-                                    }}>
-                                        <span>Checks</span>
-                                        {checks && <ChecksDot checks={checks} />}
-                                    </Stack>
-                                }
+                        <Box sx={{ pt: 1.5 }}>
+                            <ActionBar
+                                pr={pr}
+                                checks={checks}
+                                onApproved={() => onRefreshPr()}
+                                onMerged={() => onAdvanced("merged")}
+                                onClosed={() => onClosedAdvance()}
+                                onSkipped={() => onSkip?.()}
+                                onLabelsChanged={() => onRefreshPr()}
+                                onRefreshPr={onRefreshPr}
+                                notify={notify}
                             />
-                            <Tab label={`Comments ${comments ? `(${comments.length})` : ""}`} />
-                        </Tabs>
-
-                        {/* Tab body */}
-                        <Box sx={{ flex: 1, overflowY: "auto", px: 1, py: 2 }}>
-                            {tab === 0 && <OverviewTab pr={pr} />}
-                            {tab === 1 && <FilesTab files={files} />}
-                            {tab === 2 && (
-                                <ChecksTab prNumber={prNumber} checks={checks} onRefresh={loadChecks} />
-                            )}
-                            {tab === 3 && (
-                                <CommentsTab
-                                    prNumber={prNumber}
-                                    comments={comments}
-                                    onRefresh={loadComments}
-                                />
-                            )}
                         </Box>
-
-                        {/* Sticky actions */}
-                        <ActionBar
-                            pr={pr}
-                            checks={checks}
-                            onApproved={() => onRefreshPr()}
-                            onMerged={() => onAdvanced("merged")}
-                            onClosed={() => onClosedAdvance()}
-                            onSkipped={() => onSkip?.()}
-                            onLabelsChanged={() => onRefreshPr()}
-                            onRefreshPr={onRefreshPr}
-                            notify={notify}
-                        />
 
                         <LabelsDialog
                             open={labelsOpen}
@@ -290,45 +462,4 @@ export default function ReviewPanel({
     function onClosedAdvance() {
         onAdvanced("closed");
     }
-}
-
-function ChecksDot({ checks }: { checks: ChecksPayload }) {
-    const waiting = checks.workflowRuns.some(
-        (r) => r.status === "waiting" || r.status === "action_required",
-    );
-    const failing = checks.checkRuns.some(
-        (c) =>
-            c.status === "completed" &&
-            c.conclusion &&
-            !["success", "neutral", "skipped"].includes(c.conclusion),
-    );
-    const running = checks.checkRuns.some((c) => c.status !== "completed");
-
-    const color = failing
-        ? "error.main"
-        : waiting || running
-          ? "warning.main"
-          : "success.main";
-    const label = failing
-        ? "Checks failing"
-        : waiting
-          ? "CI needs approval"
-          : running
-            ? "Checks running"
-            : "Checks passing";
-
-    return (
-        <Tooltip title={label}>
-            <Box
-                sx={{
-                    width: 9,
-                    height: 9,
-                    borderRadius: "50%",
-                    bgcolor: color,
-                    animation: waiting || running ? "pulse 1.6s ease-in-out infinite" : "none",
-                    "@keyframes pulse": { "50%": { opacity: 0.35 } },
-                }}
-            />
-        </Tooltip>
-    );
 }

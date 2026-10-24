@@ -8,22 +8,17 @@ import {
     ButtonGroup,
     Checkbox,
     Chip,
-    ClickAwayListener,
     Dialog,
     DialogActions,
     DialogContent,
     DialogTitle,
     FormControlLabel,
-    MenuItem,
-    MenuList,
     Paper,
-    Popper,
     Stack,
     TextField,
     Tooltip,
     Typography,
 } from "@mui/material";
-import ArrowDropDownRounded from "@mui/icons-material/ArrowDropDownRounded";
 import CheckRounded from "@mui/icons-material/CheckRounded";
 import MergeRounded from "@mui/icons-material/Merge";
 import CloseRounded from "@mui/icons-material/CloseRounded";
@@ -58,10 +53,8 @@ export default function ActionBar({
     const [busy, setBusy] = useState<string | null>(null);
     const [approved, setApproved] = useState(false);
     const [mergeOpen, setMergeOpen] = useState(false);
-    const [menuOpen, setMenuOpen] = useState(false);
-    const [method, setMethod] = useState<"merge" | "rebase">("merge");
     const [closeOpen, setCloseOpen] = useState(false);
-    const anchorRef = useRef<HTMLDivElement>(null);
+
     const refreshRef = useRef(onRefreshPr);
     refreshRef.current = onRefreshPr;
     useEffect(() => {
@@ -104,7 +97,7 @@ export default function ActionBar({
             }
             await api(`/api/pr/${pr.number}/merge`, {
                 method: "POST",
-                body: JSON.stringify({ method }),
+                body: JSON.stringify({ method: "merge" }),
             });
             notify(`Merged #${pr.number}`);
             setMergeOpen(false);
@@ -125,10 +118,11 @@ export default function ActionBar({
 
     // Reasons merging is blocked right now.
     const blockReasons: string[] = [];
+    const warnings: string[] = [];
     if (failing.length > 0) blockReasons.push(`${failing.length} failing check${failing.length > 1 ? "s" : ""}`);
     if (pr.mergeable === false) blockReasons.push("merge conflict");
     else if (pr.mergeableState === "dirty") blockReasons.push("merge conflict");
-    else if (pr.mergeableState === "blocked") blockReasons.push("branch protection blocks it");
+    else if (pr.mergeableState === "blocked") warnings.push("branch protection (auto-approves on merge)");
     else if (pr.mergeableState === "unstable") blockReasons.push("required checks are failing");
     const mergeBlocked = blockReasons.length > 0;
     const mergeUnknown = pr.mergeable === null; // GitHub still computing
@@ -157,7 +151,7 @@ export default function ActionBar({
                     display: "flex",
                     gap: 1,
                     alignItems: "center",
-                    px: 1.5,
+                    px: 2,
                     py: 1,
                     borderRadius: "20px",
                     bgcolor: "surfaceContainerHigh",
@@ -194,35 +188,35 @@ export default function ActionBar({
                 )}
                 <Box sx={{ flex: 1 }} />
                 <Button
-                    variant="text"
-                    size="small"
+                    variant="contained"
+                    color="inherit"
+                    size="medium"
                     startIcon={<SkipNextRounded />}
                     disabled={busy !== null}
                     onClick={() => onSkipped?.()}
+                    sx={{ minHeight: 44 }}
                 >
                     Skip
                 </Button>
                 <Button
-                    variant="text"
+                    variant="contained"
                     color="error"
-                    size="small"
+                    size="medium"
                     startIcon={<CloseRounded />}
                     disabled={busy !== null}
                     onClick={() => setCloseOpen(true)}
+                    sx={{ minHeight: 44 }}
                 >
                     Close
                 </Button>
                 <Button
-                    variant={approved ? "tonal" : "outlined"}
-                    size="small"
+                    variant="contained"
+                    color={approved ? "success" : "primary"}
+                    size="medium"
                     startIcon={<CheckRounded />}
                     disabled={busy !== null || approved}
                     onClick={approve}
-                    sx={
-                        approved
-                            ? { bgcolor: "successContainer", color: "onSuccessContainer" }
-                            : undefined
-                    }
+                    sx={{ minHeight: 44 }}
                 >
                     {approved ? "Approved" : "Approve"}
                 </Button>
@@ -230,59 +224,26 @@ export default function ActionBar({
                     title={
                         mergeBlocked
                             ? `Can't merge: ${blockReasons.join(", ")}.`
-                            : mergeUnknown
-                              ? "Checking mergeability…"
-                              : ""
+                            : warnings.length
+                              ? warnings.join(", ")
+                              : mergeUnknown
+                                ? "Checking mergeability…"
+                                : ""
                     }
-                    disableHoverListener={!mergeBlocked && !mergeUnknown}
+                    disableHoverListener={!mergeBlocked && !warnings.length && !mergeUnknown}
                 >
-                    <span>
-                        <ButtonGroup variant="contained" size="small" ref={anchorRef}>
-                            <Button
-                                startIcon={<MergeRounded />}
-                                disabled={busy !== null || mergeBlocked}
-                                onClick={() => setMergeOpen(true)}
-                                sx={{ borderTopRightRadius: 0, borderBottomRightRadius: 0 }}
-                            >
-                                {approved ? "Merge" : "Approve & merge"}
-                            </Button>
-                            <Button
-                                disabled={busy !== null || mergeBlocked}
-                                onClick={() => setMenuOpen((o) => !o)}
-                                sx={{ borderTopLeftRadius: 0, borderBottomLeftRadius: 0, px: 0.5 }}
-                                aria-label="Choose merge method"
-                            >
-                                <ArrowDropDownRounded />
-                            </Button>
-                        </ButtonGroup>
-                    </span>
+                    <Button
+                        variant="contained"
+                        color="success"
+                        size="medium"
+                        startIcon={<MergeRounded />}
+                        disabled={busy !== null || mergeBlocked}
+                        onClick={() => setMergeOpen(true)}
+                        sx={{ minHeight: 44 }}
+                    >
+                        Merge
+                    </Button>
                 </Tooltip>
-                <Popper open={menuOpen} anchorEl={anchorRef.current} placement="top-end" sx={{ zIndex: 20 }}>
-                    <ClickAwayListener onClickAway={() => setMenuOpen(false)}>
-                        <Paper sx={{ borderRadius: "16px", bgcolor: "surfaceContainer", mt: -1 }}>
-                            <MenuList dense>
-                                <MenuItem
-                                    selected={method === "merge"}
-                                    onClick={() => {
-                                        setMethod("merge");
-                                        setMenuOpen(false);
-                                    }}
-                                >
-                                    Merge commit
-                                </MenuItem>
-                                <MenuItem
-                                    selected={method === "rebase"}
-                                    onClick={() => {
-                                        setMethod("rebase");
-                                        setMenuOpen(false);
-                                    }}
-                                >
-                                    Rebase and merge
-                                </MenuItem>
-                            </MenuList>
-                        </Paper>
-                    </ClickAwayListener>
-                </Popper>
             </Paper>
 
             {/* Merge confirmation */}
@@ -290,10 +251,9 @@ export default function ActionBar({
                 <DialogTitle>Merge #{pr.number}?</DialogTitle>
                 <DialogContent>
                     <Stack spacing={1.5} sx={{ pt: 0.5 }}>
-                        <Typography variant="body2" sx={{ color: "text.secondary" }}>
-                            Method: <b>{method === "merge" ? "merge commit" : "rebase"}</b>. This will{" "}
-                            {!approved && "approve and "}merge the PR and publish the DNS records.
-                        </Typography>
+                            <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                                This will {!approved && "approve and "}merge the PR via a merge commit and publish the DNS records.
+                            </Typography>
                         {mergeBlocked && (
                             <Alert severity="error">
                                 Can't merge: {blockReasons.join(", ")}.
@@ -345,13 +305,12 @@ export default function ActionBar({
                 busy={busy === "close"}
                 onConfirm={(reasonLabels, comment) =>
                     run("close", async () => {
-                        if (reasonLabels.length) {
-                            await api(`/api/pr/${pr.number}/labels`, {
-                                method: "POST",
-                                body: JSON.stringify({ add: reasonLabels }),
-                            });
-                            onLabelsChanged(reasonLabels);
-                        }
+                        const toAdd = Array.from(new Set([...reasonLabels, "status: denied"]));
+                        await api(`/api/pr/${pr.number}/labels`, {
+                            method: "POST",
+                            body: JSON.stringify({ add: toAdd }),
+                        });
+                        onLabelsChanged(toAdd);
                         await api(`/api/pr/${pr.number}/close`, {
                             method: "POST",
                             body: JSON.stringify({ comment: comment || undefined }),
@@ -380,7 +339,7 @@ function CloseDialog({
     onConfirm: (reasonLabels: string[], comment: string) => void;
 }) {
     const reasons = useMemo(() => loadCanned().filter((c) => c.reasonLabel), [open]);
-    const [picked, setPicked] = useState<string | null>(null);
+    const [picked, setPicked] = useState<string[]>([]);
     const [comment, setComment] = useState("");
     const [postComment, setPostComment] = useState(true);
 
@@ -389,19 +348,24 @@ function CloseDialog({
     if (open !== lastOpen) {
         setLastOpen(open);
         if (open) {
-            setPicked(null);
+            setPicked([]);
             setComment("");
             setPostComment(true);
         }
     }
 
-    const pick = (id: string | null) => {
-        setPicked(id);
-        const c = reasons.find((r) => r.id === id);
-        if (c) setComment(c.body);
+    const toggle = (id: string) => {
+        setPicked((prev) => {
+            const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
+            const selected = reasons.filter((r) => next.includes(r.id));
+            setComment(selected.map((r) => r.body).join("\n\n"));
+            return next;
+        });
     };
 
-    const labels = picked ? [reasons.find((r) => r.id === picked)!.reasonLabel!] : [];
+    const labels = picked
+        .map((id) => reasons.find((r) => r.id === id)?.reasonLabel)
+        .filter((x): x is string => Boolean(x));
 
     return (
         <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
@@ -413,20 +377,23 @@ function CloseDialog({
                             Reason (adds label)
                         </Typography>
                         <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1, mt: 0.5 }}>
-                            {reasons.map((r) => (
-                                <Chip
-                                    key={r.id}
-                                    label={r.title}
-                                    onClick={() => pick(picked === r.id ? null : r.id)}
-                                    sx={{
-                                        fontWeight: 600,
-                                        border: "1.5px solid",
-                                        borderColor: picked === r.id ? "#D93F0B" : "outlineVariant",
-                                        bgcolor: picked === r.id ? "#D93F0B26" : "transparent",
-                                        color: picked === r.id ? "#D93F0B" : "text.secondary",
-                                    }}
-                                />
-                            ))}
+                            {reasons.map((r) => {
+                                const isPicked = picked.includes(r.id);
+                                return (
+                                    <Chip
+                                        key={r.id}
+                                        label={r.title}
+                                        onClick={() => toggle(r.id)}
+                                        sx={{
+                                            fontWeight: 600,
+                                            border: "1.5px solid",
+                                            borderColor: isPicked ? "#D93F0B" : "outlineVariant",
+                                            bgcolor: isPicked ? "#D93F0B26" : "transparent",
+                                            color: isPicked ? "#D93F0B" : "text.secondary",
+                                        }}
+                                    />
+                                );
+                            })}
                         </Box>
                     </Box>
                     <FormControlLabel

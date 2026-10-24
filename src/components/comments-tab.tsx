@@ -137,7 +137,7 @@ export default function CommentsTab({
             </Stack>
 
             {/* Composer */}
-            <Card sx={{ bgcolor: "surfaceContainer", }}>
+            <Card sx={{ bgcolor: "surfaceContainerLow", }}>
                 <CardContent sx={{ p: 2, "&:last-child": { pb: 2 } }}>
                     <Stack
                         direction="row"
