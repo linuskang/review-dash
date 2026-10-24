@@ -80,6 +80,20 @@ function StatusPill({
     );
 }
 
+function assocColor(a: string): string {
+    if (["OWNER", "MEMBER", "COLLABORATOR"].includes(a)) return "primaryContainer";
+    if (a === "CONTRIBUTOR") return "secondaryContainer";
+    if (a === "FIRST_TIMER" || a === "FIRST_TIME_CONTRIBUTOR") return "tertiaryContainer";
+    return "surfaceContainerHigh";
+}
+
+function assocTextColor(a: string): string {
+    if (["OWNER", "MEMBER", "COLLABORATOR"].includes(a)) return "onPrimaryContainer";
+    if (a === "CONTRIBUTOR") return "onSecondaryContainer";
+    if (a === "FIRST_TIMER" || a === "FIRST_TIME_CONTRIBUTOR") return "onTertiaryContainer";
+    return "onSurfaceVariant";
+}
+
 export default function ReviewPanel({
     prNumber,
     pr,
@@ -202,18 +216,34 @@ export default function ReviewPanel({
                                 <Card sx={cardSx}>
                                     <Stack direction="row" spacing={2} sx={{ alignItems: "center", mb: 1.5 }}>
                                         <Avatar src={pr.avatarUrl} sx={{ width: 56, height: 56 }} />
-                                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                                        <Stack direction="row" spacing={1} sx={{ alignItems: "center", mb: 0.25 }}>
                                             <Typography variant="h5" noWrap title={pr.author}>
                                                 {pr.author}
                                             </Typography>
-                                            <Typography
-                                                variant="body2"
-                                                sx={{ color: "text.secondary", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-                                                title={pr.title}
-                                            >
-                                                {pr.title}
-                                            </Typography>
-                                        </Box>
+                                            {pr.authorAssociation && (
+                                                <Chip
+                                                    size="small"
+                                                    label={pr.authorAssociation.replace(/_/g, " ").toLowerCase()}
+                                                    sx={{
+                                                        height: 20,
+                                                        fontSize: 11,
+                                                        fontWeight: 700,
+                                                        textTransform: "capitalize",
+                                                        bgcolor: assocColor(pr.authorAssociation),
+                                                        color: assocTextColor(pr.authorAssociation),
+                                                    }}
+                                                />
+                                            )}
+                                        </Stack>
+                                        <Typography
+                                            variant="body2"
+                                            sx={{ color: "text.secondary", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                                            title={pr.title}
+                                        >
+                                            {pr.title}
+                                        </Typography>
+                                    </Box>
                                         <Button
                                             variant="contained"
                                             size="small"

@@ -57,6 +57,7 @@ export const GET = withAuth(async (_req, { session }) => {
                 title: pr.title,
                 author: user?.login,
                 avatarUrl: user?.avatar_url,
+                authorAssociation: pr.author_association,
                 createdAt: pr.created_at,
                 draft: pr.draft,
                 labels: ((pr.labels as { name: string; color: string }[]) || []).map((l) => ({

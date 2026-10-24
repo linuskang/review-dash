@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
     Avatar,
     Box,
+    Chip,
     IconButton,
     List,
     ListItemButton,
@@ -119,9 +120,18 @@ export default function PrQueue({
                                 >
                                     <Stack direction="row" spacing={1.5} sx={{ width: "100%", minWidth: 0, alignItems: "stretch" }}>
                                         <Box sx={{ flex: 1, minWidth: 0 }}>
-                                            <Typography variant="caption" sx={{ fontWeight: 800, color: "text.primary", display: "block", mb: 0.25 }}>
-                                                #{pr.number}{pr.draft ? " · draft" : ""}
-                                            </Typography>
+                                            <Stack direction="row" spacing={0.5} sx={{ alignItems: "center", mb: 0.25 }}>
+                                                <Typography variant="caption" sx={{ fontWeight: 800, color: "text.primary" }}>
+                                                    #{pr.number}{pr.draft ? " · draft" : ""}
+                                                </Typography>
+                                                {pr.authorAssociation && ["FIRST_TIMER", "FIRST_TIME_CONTRIBUTOR"].includes(pr.authorAssociation) && (
+                                                    <Chip
+                                                        size="small"
+                                                        label="new"
+                                                        sx={{ height: 16, fontSize: 10, fontWeight: 700, bgcolor: "tertiaryContainer", color: "onTertiaryContainer" }}
+                                                    />
+                                                )}
+                                            </Stack>
                                             <Typography
                                                 variant="subtitle1"
                                                 sx={{

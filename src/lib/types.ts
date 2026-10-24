@@ -8,6 +8,7 @@ export interface QueuePr {
     title: string;
     author: string;
     avatarUrl: string;
+    authorAssociation?: string;
     createdAt: string;
     draft: boolean;
     labels: PrLabel[];

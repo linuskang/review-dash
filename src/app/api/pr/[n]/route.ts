@@ -20,6 +20,7 @@ export const GET = withAuth(async (_req, { session, params }) => {
             htmlUrl: pr.html_url,
             author: user?.login,
             avatarUrl: user?.avatar_url,
+            authorAssociation: pr.author_association,
             createdAt: pr.created_at,
             labels: ((pr.labels as unknown as { name: string; color: string }[]) || []).map((l) => ({
                 name: l.name,
