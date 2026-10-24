@@ -68,7 +68,7 @@ export default function PreviewColumn({ pr }: { pr: PrDetail | null }) {
             initial={{ opacity: 0, x: 12 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ type: "spring", stiffness: 300, damping: 32 }}
-            style={{ width: 360, flexShrink: 0, display: "flex", flexDirection: "column" }}
+            style={{ flex: "2.5 1 0", minWidth: 360, flexShrink: 0, display: "flex", flexDirection: "column" }}
         >
             <Card
                                 sx={{

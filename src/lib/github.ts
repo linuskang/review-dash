@@ -1,5 +1,5 @@
-export const REPO_OWNER = process.env.REPO_OWNER || "is-a-dev";
-export const REPO_NAME = process.env.REPO_NAME || "register";
+export const REPO_OWNER = "is-a-dev";
+export const REPO_NAME = "register";
 export const REPO = `${REPO_OWNER}/${REPO_NAME}`;
 
 export interface GhResult<T = unknown> {

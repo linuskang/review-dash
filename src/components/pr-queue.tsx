@@ -13,6 +13,7 @@ import {
     Typography,
 } from "@mui/material";
 import RefreshRounded from "@mui/icons-material/RefreshRounded";
+import ChatBubbleOutlineRounded from "@mui/icons-material/ChatBubbleOutlineRounded";
 import LabelChip from "./label-chip";
 import { timeAgo } from "@/lib/client";
 import type { QueuePr } from "@/lib/types";
@@ -36,7 +37,8 @@ export default function PrQueue({
         <Box
             component="nav"
             sx={{
-                width: 340,
+                flex: "1 1 0",
+                minWidth: 280,
                 flexShrink: 0,
                 height: "100%",
                 display: "flex",
@@ -115,52 +117,82 @@ export default function PrQueue({
                                         },
                                     }}
                                 >
-                                    <Stack direction="row" spacing={1.5} sx={{ width: "100%", minWidth: 0 }}>
-                                        <Avatar src={pr.avatarUrl} sx={{ width: 34, height: 34, mt: 0.25 }} />
-                                        <Box sx={{ minWidth: 0, flex: 1 }}>
+                                    <Stack direction="row" spacing={1.5} sx={{ width: "100%", minWidth: 0, alignItems: "stretch" }}>
+                                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                                            <Typography variant="caption" sx={{ fontWeight: 800, color: "text.primary", display: "block", mb: 0.25 }}>
+                                                #{pr.number}{pr.draft ? " · draft" : ""}
+                                            </Typography>
                                             <Typography
-                                                variant="subtitle2"
+                                                variant="subtitle1"
                                                 sx={{
-                                                    lineHeight: 1.3,
+                                                    fontWeight: 700,
+                                                    lineHeight: 1.25,
                                                     display: "-webkit-box",
                                                     WebkitLineClamp: 2,
                                                     WebkitBoxOrient: "vertical",
                                                     overflow: "hidden",
+                                                    mb: 0.75,
                                                 }}
                                             >
                                                 {pr.title}
                                             </Typography>
-                                            <Typography variant="caption" sx={{
-                                                color: "text.secondary"
-                                            }}>
-                                                #{pr.number} · {pr.author} · {timeAgo(pr.createdAt)}
-                                                {pr.draft ? " · draft" : ""}
-                                            </Typography>
+                                            <Stack direction="row" spacing={1} sx={{ alignItems: "center", mb: 0.75 }}>
+                                                <Avatar src={pr.avatarUrl} sx={{ width: 22, height: 22 }} />
+                                                <Typography variant="caption" sx={{ fontWeight: 600 }}>
+                                                    {pr.author}
+                                                </Typography>
+                                                <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                                                    {timeAgo(pr.createdAt)}
+                                                </Typography>
+                                            </Stack>
                                             {pr.labels.length > 0 && (
                                                 <Stack
                                                     direction="row"
                                                     spacing={0.5}
                                                     useFlexGap
-                                                    sx={{
-                                                        flexWrap: "wrap",
-                                                        mt: 0.75
-                                                    }}>
+                                                    sx={{ flexWrap: "wrap" }}
+                                                >
                                                     {pr.labels.slice(0, MAX_CHIPS).map((l) => (
                                                         <LabelChip key={l.name} label={l} />
                                                     ))}
                                                     {pr.labels.length > MAX_CHIPS && (
                                                         <Typography
                                                             variant="caption"
-                                                            sx={{
-                                                                color: "text.secondary",
-                                                                alignSelf: "center"
-                                                            }}>
+                                                            sx={{ color: "text.secondary", alignSelf: "center" }}
+                                                        >
                                                             +{pr.labels.length - MAX_CHIPS}
                                                         </Typography>
                                                     )}
                                                 </Stack>
                                             )}
                                         </Box>
+                                        <Stack sx={{ minWidth: 76, alignItems: "flex-end", justifyContent: "space-between" }}>
+                                            {pr.checks && pr.checks.total > 0 && (
+                                                <Typography
+                                                    variant="caption"
+                                                    sx={{
+                                                        fontWeight: 700,
+                                                        color:
+                                                            pr.checks.failed > 0
+                                                                ? "error.main"
+                                                                : pr.checks.pending > 0
+                                                                  ? "warning.main"
+                                                                  : "success.main",
+                                                    }}
+                                                >
+                                                    {pr.checks.passed}/{pr.checks.total} checks
+                                                </Typography>
+                                            )}
+                                            <Box sx={{ flex: 1 }} />
+                                            {typeof pr.commentsCount === "number" && pr.commentsCount > 0 && (
+                                                <Stack direction="row" spacing={0.25} sx={{ alignItems: "center" }}>
+                                                    <ChatBubbleOutlineRounded sx={{ fontSize: 13, color: "text.secondary" }} />
+                                                    <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: 600 }}>
+                                                        {pr.commentsCount}
+                                                    </Typography>
+                                                </Stack>
+                                            )}
+                                        </Stack>
                                     </Stack>
                                 </ListItemButton>
                             </motion.div>

@@ -70,7 +70,6 @@ export default function FilesTab({ files }: { files: PrFile[] | null }) {
                     disableGutters
                     sx={{
                         borderRadius: "20px !important",
-                        border: "1px solid",
                                                 bgcolor: "surfaceContainerLow",
                         "&:before": { display: "none" },
                         overflow: "hidden",

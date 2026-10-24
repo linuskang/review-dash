@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
     Avatar,
@@ -41,12 +41,14 @@ export default function ReviewPanel({
     pr,
     onRefreshPr,
     onAdvanced,
+    onSkip,
     notify,
 }: {
     prNumber: number;
     pr: PrDetail | null;
     onRefreshPr: () => void;
     onAdvanced: (action: "merged" | "closed") => void;
+    onSkip?: () => void;
     notify: Notify;
 }) {
     const [files, setFiles] = useState<PrFile[] | null>(null);
@@ -54,6 +56,8 @@ export default function ReviewPanel({
     const [checks, setChecks] = useState<ChecksPayload | null>(null);
     const [tab, setTab] = useState(0);
     const [labelsOpen, setLabelsOpen] = useState(false);
+    const refreshRef = useRef(onRefreshPr);
+    refreshRef.current = onRefreshPr;
 
     const loadFiles = useCallback(() => {
         api<PrFile[]>(`/api/pr/${prNumber}/files`).then(setFiles).catch(() => setFiles([]));
@@ -87,6 +91,26 @@ export default function ReviewPanel({
         const id = setInterval(loadChecks, 12_000);
         return () => clearInterval(id);
     }, [checks, loadChecks]);
+
+    // Refresh PR detail when checks finish so mergeability updates.
+    useEffect(() => {
+        if (!checks) return;
+        if (checks.checkRuns.some((c) => c.status !== "completed")) return;
+        if (
+            checks.workflowRuns.some(
+                (r) => r.status !== "completed" && r.status !== "waiting" && r.status !== "action_required",
+            )
+        )
+            return;
+        refreshRef.current();
+    }, [checks]);
+
+    // Resolve mergeability if GitHub is still computing.
+    useEffect(() => {
+        if (!pr || pr.mergeable !== null) return;
+        const id = setTimeout(() => refreshRef.current(), 2000);
+        return () => clearTimeout(id);
+    }, [pr]);
 
     const onLabelsSaved = (labels: PrLabel[]) => {
         onRefreshPr();
@@ -154,7 +178,7 @@ export default function ReviewPanel({
                                     <Typography
                                         variant="body2"
                                         noWrap
-                                        title={`${pr.author} · #${pr.number} · ${pr.headRef} → ${pr.baseRef} · +${pr.additions} −${pr.deletions} · ${pr.changedFiles} file${pr.changedFiles === 1 ? "" : "s"}`}
+                                        title={`${pr.author} · #${pr.number} ·  · +${pr.additions} −${pr.deletions} · ${pr.changedFiles} file${pr.changedFiles === 1 ? "" : "s"}`}
                                         sx={{ color: "text.secondary", overflow: "hidden", textOverflow: "ellipsis" }}
                                     >
                                         <Link
@@ -166,15 +190,6 @@ export default function ReviewPanel({
                                             {pr.author}
                                         </Link>{" "}
                                         · #{pr.number} · opened {timeAgo(pr.createdAt)} ·{" "}
-                                        <Box
-                                            component="span"
-                                            sx={{
-                                                fontFamily: "ui-monospace, monospace",
-                                                fontSize: "0.85em",
-                                            }}
-                                        >
-                                            {pr.headRef} → {pr.baseRef}
-                                        </Box>{" "}
                                         ·{" "}
                                         <Box component="span" sx={{ color: "success.main", fontWeight: 600 }}>
                                             +{pr.additions}
@@ -250,10 +265,12 @@ export default function ReviewPanel({
                         <ActionBar
                             pr={pr}
                             checks={checks}
-                            onApproved={() => {}}
+                            onApproved={() => onRefreshPr()}
                             onMerged={() => onAdvanced("merged")}
                             onClosed={() => onClosedAdvance()}
+                            onSkipped={() => onSkip?.()}
                             onLabelsChanged={() => onRefreshPr()}
+                            onRefreshPr={onRefreshPr}
                             notify={notify}
                         />
 

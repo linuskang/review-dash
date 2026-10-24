@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
     Alert,
     Box,
@@ -27,6 +27,7 @@ import ArrowDropDownRounded from "@mui/icons-material/ArrowDropDownRounded";
 import CheckRounded from "@mui/icons-material/CheckRounded";
 import MergeRounded from "@mui/icons-material/Merge";
 import CloseRounded from "@mui/icons-material/CloseRounded";
+import SkipNextRounded from "@mui/icons-material/SkipNextRounded";
 import { api } from "@/lib/client";
 import { loadCanned } from "@/lib/canned";
 import type { ChecksPayload, PrDetail } from "@/lib/types";
@@ -39,7 +40,9 @@ export default function ActionBar({
     onApproved,
     onMerged,
     onClosed,
+    onSkipped,
     onLabelsChanged,
+    onRefreshPr,
     notify,
 }: {
     pr: PrDetail;
@@ -47,7 +50,9 @@ export default function ActionBar({
     onApproved: () => void;
     onMerged: () => void;
     onClosed: () => void;
+    onSkipped?: () => void;
     onLabelsChanged: (names: string[]) => void;
+    onRefreshPr?: () => void;
     notify: Notify;
 }) {
     const [busy, setBusy] = useState<string | null>(null);
@@ -57,6 +62,14 @@ export default function ActionBar({
     const [method, setMethod] = useState<"merge" | "rebase">("merge");
     const [closeOpen, setCloseOpen] = useState(false);
     const anchorRef = useRef<HTMLDivElement>(null);
+    const refreshRef = useRef(onRefreshPr);
+    refreshRef.current = onRefreshPr;
+    useEffect(() => {
+        if (pr.mergeable === null) {
+            const id = setTimeout(() => refreshRef.current?.(), 2000);
+            return () => clearTimeout(id);
+        }
+    }, [pr.mergeable]);
 
     const run = async (key: string, fn: () => Promise<void>) => {
         setBusy(key);
@@ -182,6 +195,15 @@ export default function ActionBar({
                 <Box sx={{ flex: 1 }} />
                 <Button
                     variant="text"
+                    size="small"
+                    startIcon={<SkipNextRounded />}
+                    disabled={busy !== null}
+                    onClick={() => onSkipped?.()}
+                >
+                    Skip
+                </Button>
+                <Button
+                    variant="text"
                     color="error"
                     size="small"
                     startIcon={<CloseRounded />}
@@ -218,14 +240,14 @@ export default function ActionBar({
                         <ButtonGroup variant="contained" size="small" ref={anchorRef}>
                             <Button
                                 startIcon={<MergeRounded />}
-                                disabled={busy !== null || mergeBlocked || mergeUnknown}
+                                disabled={busy !== null || mergeBlocked}
                                 onClick={() => setMergeOpen(true)}
                                 sx={{ borderTopRightRadius: 0, borderBottomRightRadius: 0 }}
                             >
                                 {approved ? "Merge" : "Approve & merge"}
                             </Button>
                             <Button
-                                disabled={busy !== null || mergeBlocked || mergeUnknown}
+                                disabled={busy !== null || mergeBlocked}
                                 onClick={() => setMenuOpen((o) => !o)}
                                 sx={{ borderTopLeftRadius: 0, borderBottomLeftRadius: 0, px: 0.5 }}
                                 aria-label="Choose merge method"
@@ -304,15 +326,13 @@ export default function ActionBar({
                     <Button
                         variant="contained"
                         onClick={merge}
-                        disabled={busy === "merge" || mergeBlocked || mergeUnknown}
+                        disabled={busy === "merge" || mergeBlocked}
                     >
                         {busy === "merge"
-                            ? "Merging…"
+                            ? "Merging�?�"
                             : mergeBlocked
                               ? "Blocked"
-                              : mergeUnknown
-                                ? "Checking…"
-                                : "Confirm merge"}
+                              : "Confirm merge"}
                     </Button>
                 </DialogActions>
             </Dialog>

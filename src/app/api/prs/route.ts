@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { withAuth, pass } from "@/lib/api";
-import { ghPaginate, REPO } from "@/lib/github";
+import { gh, ghPaginate, REPO } from "@/lib/github";
 
 /** Open PRs, oldest first. */
 export const GET = withAuth(async (_req, { session }) => {
@@ -9,20 +9,57 @@ export const GET = withAuth(async (_req, { session }) => {
         `/repos/${REPO}/pulls?state=open&sort=created&direction=asc`,
         3,
     );
-    const slim = (prs as Record<string, unknown>[]).map((pr) => {
-        const user = pr.user as { login: string; avatar_url: string };
-        return {
-            number: pr.number,
-            title: pr.title,
-            author: user?.login,
-            avatarUrl: user?.avatar_url,
-            createdAt: pr.created_at,
-            draft: pr.draft,
-            labels: ((pr.labels as { name: string; color: string }[]) || []).map((l) => ({
-                name: l.name,
-                color: l.color,
-            })),
-        };
-    });
+    const slim = await Promise.all(
+        (prs as Record<string, unknown>[]).map(async (pr) => {
+            const user = pr.user as { login: string; avatar_url: string };
+            const head = pr.head as { sha: string };
+            let checks: { total: number; passed: number; failed: number; pending: number } | undefined;
+            let commentsCount = 0;
+            try {
+                const res = await gh<{ check_runs?: { status: string; conclusion: string | null }[] }>(
+                    session.token,
+                    `/repos/${REPO}/commits/${head?.sha}/check-runs`,
+                );
+                const runs = (res.data?.check_runs ?? []) as { status: string; conclusion: string | null }[];
+                checks = {
+                    total: runs.length,
+                    passed: runs.filter(
+                        (r) =>
+                            r.status === "completed" &&
+                            ["success", "neutral", "skipped"].includes(r.conclusion ?? ""),
+                    ).length,
+                    failed: runs.filter(
+                        (r) =>
+                            r.status === "completed" &&
+                            !!r.conclusion &&
+                            !["success", "neutral", "skipped"].includes(r.conclusion),
+                    ).length,
+                    pending: runs.filter((r) => r.status !== "completed").length,
+                };
+            } catch {
+                checks = undefined;
+            }
+            try {
+                const cmts = await ghPaginate(session.token, `/repos/${REPO}/issues/${pr.number}/comments`, 2);
+                commentsCount = cmts.length;
+            } catch {
+                commentsCount = 0;
+            }
+            return {
+                number: pr.number,
+                title: pr.title,
+                author: user?.login,
+                avatarUrl: user?.avatar_url,
+                createdAt: pr.created_at,
+                draft: pr.draft,
+                labels: ((pr.labels as { name: string; color: string }[]) || []).map((l) => ({
+                    name: l.name,
+                    color: l.color,
+                })),
+                commentsCount,
+                checks,
+            };
+        }),
+    );
     return pass({ ok: true, status: 200, data: slim }) as ReturnType<typeof NextResponse.json>;
 });

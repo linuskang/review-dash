@@ -97,8 +97,18 @@ export default function Dashboard() {
         [selected, notify],
     );
 
+    const handleSkip = useCallback(() => {
+        setPrs((queue) => {
+            const idx = queue.findIndex((p) => p.number === selected);
+            if (queue.length <= 1) return queue;
+            const next = queue[(idx + 1) % queue.length];
+            setSelected(next.number);
+            return queue;
+        });
+    }, [selected]);
+
     return (
-        <Box sx={{ height: "100vh", display: "flex", flexDirection: "column", p: 2, gap: 2 }}>
+        <Box sx={{ height: "100vh", display: "flex", flexDirection: "column", p: 1, gap: 1 }}>
             {/* Top bar */}
             <Stack
                 direction="row"
@@ -136,7 +146,7 @@ export default function Dashboard() {
             </Stack>
 
             {/* Body */}
-            <Stack direction="row" spacing={2} sx={{ flex: 1, minHeight: 0 }}>
+            <Stack direction="row" spacing={2} sx={{ flex: 1, minHeight: 0, alignItems: "stretch" }}>
                 <PrQueue
                     prs={prs}
                     selected={selected}
@@ -144,7 +154,7 @@ export default function Dashboard() {
                     loading={loading}
                     onRefresh={() => loadQueue()}
                 />
-                <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", minHeight: 0 }}>
+                <Box sx={{ flex: "2 1 0", minWidth: 0, display: "flex", flexDirection: "column", minHeight: 0 }}>
                     {selected === null ? (
                         <Stack
                             spacing={1}
@@ -167,6 +177,7 @@ export default function Dashboard() {
                             pr={prDetail}
                             onRefreshPr={() => selected && loadPrDetail(selected)}
                             onAdvanced={handleAdvanced}
+                            onSkip={handleSkip}
                             notify={notify}
                         />
                     )}

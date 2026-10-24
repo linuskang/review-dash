@@ -11,6 +11,8 @@ export interface QueuePr {
     createdAt: string;
     draft: boolean;
     labels: PrLabel[];
+    commentsCount?: number;
+    checks?: { total: number; passed: number; failed: number; pending: number };
 }
 
 export interface PrDetail extends QueuePr {
