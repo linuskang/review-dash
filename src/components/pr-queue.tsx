@@ -38,10 +38,12 @@ export default function PrQueue({
         <Box
             component="nav"
             sx={{
-                flex: "1 1 0",
-                minWidth: 280,
+                flex: { xs: "0 0 auto", md: "1 1 0" },
+                width: { xs: "100%", md: "auto" },
+                minWidth: { xs: 0, md: 280 },
+                height: { xs: "auto", md: "100%" },
+                maxHeight: { xs: 180, md: "none" },
                 flexShrink: 0,
-                height: "100%",
                 display: "flex",
                 flexDirection: "column",
                 bgcolor: "surfaceContainerLow",
@@ -68,7 +70,19 @@ export default function PrQueue({
                 </Tooltip>
             </Stack>
 
-            <List sx={{ overflowY: "auto", flex: 1, px: 0.5, py: 0 }} disablePadding>
+            <List
+                sx={{
+                    overflowY: { xs: "hidden", md: "auto" },
+                    overflowX: { xs: "auto", md: "hidden" },
+                    flex: 1,
+                    display: "flex",
+                    flexDirection: { xs: "row", md: "column" },
+                    gap: { xs: 1, md: 0 },
+                    px: 0.5,
+                    py: 0,
+                }}
+                disablePadding
+            >
                 {loading &&
                     Array.from({ length: 6 }).map((_, i) => (
                         <Skeleton
@@ -101,6 +115,7 @@ export default function PrQueue({
                                 animate={{ opacity: 1, y: 0 }}
                                 exit={{ opacity: 0, scale: 0.96 }}
                                 transition={{ type: "spring", stiffness: 400, damping: 34 }}
+                                style={{ width: "100%", minWidth: 260, flexShrink: 0 }}
                             >
                                 <ListItemButton
                                     selected={active}

@@ -146,7 +146,7 @@ export default function Dashboard() {
             </Stack>
 
             {/* Body */}
-            <Stack direction="row" spacing={2} sx={{ flex: 1, minHeight: 0, alignItems: "stretch" }}>
+            <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ flex: 1, minHeight: 0, alignItems: "stretch" }}>
                 <PrQueue
                     prs={prs}
                     selected={selected}
@@ -182,7 +182,11 @@ export default function Dashboard() {
                         />
                     )}
                 </Box>
-                {selected !== null && <PreviewColumn pr={prDetail} />}
+                {selected !== null && (
+                    <Box sx={{ display: { xs: "none", md: "flex" }, flex: "2.5 1 0", minWidth: 0 }}>
+                        <PreviewColumn pr={prDetail} />
+                    </Box>
+                )}
             </Stack>
 
             <Snackbar

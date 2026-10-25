@@ -13,11 +13,22 @@ const ERRORS: Record<string, string> = {
     user: "Couldn't read your GitHub profile. Try again.",
     permission: "Your GitHub account doesn't have write access to is-a-dev/register. This dashboard is for maintainers.",
     "dev-token": "The configured dev token is invalid.",
+    expired: "Your GitHub session expired. Please log in again.",
+    session: "Your session expired. Please log in again.",
+    "session-expired": "Your session expired. Please log in again.",
+    "oauth-expired": "OAuth session expired. Please log in again.",
+    unauthorized: "You need to log in again.",
 };
 
 export default function LoginClient() {
     const params = useSearchParams();
-    const error = params.get("error");
+    const rawError = params.get("error");
+    const expiredFlag =
+        params.get("expired") === "1" ||
+        params.get("expired") === "true" ||
+        params.get("session_expired") === "1" ||
+        params.get("oauth_expired") === "1";
+    const error = expiredFlag ? "expired" : rawError;
     const user = params.get("user");
     const [devAvailable, setDevAvailable] = useState(false);
 

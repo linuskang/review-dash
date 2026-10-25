@@ -6,7 +6,7 @@ export async function api<T = unknown>(path: string, init?: RequestInit): Promis
         headers: init?.body ? { "Content-Type": "application/json" } : undefined,
     });
     if (res.status === 401) {
-        window.location.href = "/login";
+        window.location.href = "/login?error=expired";
         throw new Error("unauthorized");
     }
     const data = await res.json().catch(() => null);
