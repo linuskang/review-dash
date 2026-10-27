@@ -2,12 +2,6 @@ import type { CannedResponse } from "./types";
 
 export const DEFAULT_CANNED: CannedResponse[] = [
     {
-        id: "incomplete-pr",
-        title: "Incomplete PR template",
-        reasonLabel: "reason: incomplete pr",
-        body: "Your PR template is incomplete. Please fill out **all** requirement checkboxes (exactly `[x]`), and provide both the **Website Preview** link and **Website Purpose** between the markers. Your PR cannot be approved until the template is properly completed.",
-    },
-    {
         id: "incomplete-website",
         title: "Incomplete website",
         reasonLabel: "reason: incomplete website",
