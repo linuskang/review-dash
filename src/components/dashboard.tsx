@@ -48,6 +48,10 @@ export default function Dashboard() {
         [],
     );
 
+    const updateQueuePr = useCallback((n: number, patch: Partial<QueuePr>) => {
+        setPrs((queue) => queue.map((p) => (p.number === n ? { ...p, ...patch } : p)));
+    }, []);
+
     const loadQueue = useCallback(async (silent = false) => {
         if (!silent) setLoading(true);
         try {
@@ -64,13 +68,37 @@ export default function Dashboard() {
         }
     }, [notify]);
 
-    const loadPrDetail = useCallback(async (n: number) => {
-        try {
-            setPrDetail(await api<PrDetail>(`/api/pr/${n}`));
-        } catch {
-            setPrDetail(null);
-        }
-    }, []);
+    const loadPrDetail = useCallback(
+        async (n: number) => {
+            try {
+                const detail = await api<PrDetail>(`/api/pr/${n}`);
+                setPrDetail(detail);
+                updateQueuePr(n, {
+                    labels: detail.labels,
+                    title: detail.title,
+                    draft: detail.draft,
+                    author: detail.author,
+                    avatarUrl: detail.avatarUrl,
+                    authorAssociation: detail.authorAssociation,
+                });
+            } catch {
+                setPrDetail(null);
+            }
+        },
+        [updateQueuePr],
+    );
+
+    const handleQueuePatch = useCallback(
+        (n: number, patch: Partial<QueuePr>) => {
+            if (patch.labels) {
+                setPrDetail((prev) =>
+                    prev && prev.number === n ? { ...prev, labels: patch.labels! } : prev,
+                );
+            }
+            updateQueuePr(n, patch);
+        },
+        [updateQueuePr],
+    );
 
     useEffect(() => {
         if (selected) loadPrDetail(selected);
@@ -176,6 +204,7 @@ export default function Dashboard() {
                             prNumber={selected}
                             pr={prDetail}
                             onRefreshPr={() => selected && loadPrDetail(selected)}
+                            onSyncQueue={(patch) => selected && handleQueuePatch(selected, patch)}
                             onAdvanced={handleAdvanced}
                             onSkip={handleSkip}
                             notify={notify}

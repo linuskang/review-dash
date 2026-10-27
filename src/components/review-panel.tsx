@@ -10,15 +10,12 @@ import {
     Chip,
     Collapse,
     Divider,
-    IconButton,
     Link,
     Skeleton,
     Stack,
-    Tooltip,
     Typography,
 } from "@mui/material";
 import OpenInNewRounded from "@mui/icons-material/OpenInNewRounded";
-import RefreshRounded from "@mui/icons-material/RefreshRounded";
 import LocalOfferRounded from "@mui/icons-material/LocalOfferRounded";
 import CheckCircleRounded from "@mui/icons-material/CheckCircleRounded";
 import CancelRounded from "@mui/icons-material/CancelRounded";
@@ -40,9 +37,42 @@ import type {
     PrEvent,
     PrFile,
     PrLabel,
+    QueuePr,
 } from "@/lib/types";
 
 type Notify = (message: string, severity?: "success" | "error" | "info") => void;
+
+function summarizeChecks(payload: ChecksPayload): NonNullable<QueuePr["checks"]> {
+    const runs = payload.checkRuns;
+    const awaitingApproval = payload.workflowRuns.filter(
+        (r) =>
+            r.status === "waiting" ||
+            r.status === "action_required" ||
+            r.conclusion === "action_required",
+    ).length;
+    const hasTests = runs.some((r) => r.name === "Tests");
+    const extraPending = !hasTests && (runs.length > 0 || awaitingApproval > 0) ? 1 : 0;
+
+    const passed = runs.filter(
+        (r) =>
+            r.status === "completed" &&
+            ["success", "neutral", "skipped"].includes(r.conclusion ?? ""),
+    ).length;
+    const failed = runs.filter(
+        (r) =>
+            r.status === "completed" &&
+            !!r.conclusion &&
+            !["success", "neutral", "skipped"].includes(r.conclusion),
+    ).length;
+    const pending = runs.filter((r) => r.status !== "completed").length + extraPending;
+
+    return {
+        total: runs.length + extraPending,
+        passed,
+        failed,
+        pending,
+    };
+}
 
 function StatusPill({
     label,
@@ -99,6 +129,7 @@ export default function ReviewPanel({
     prNumber,
     pr,
     onRefreshPr,
+    onSyncQueue,
     onAdvanced,
     onSkip,
     notify,
@@ -106,6 +137,7 @@ export default function ReviewPanel({
     prNumber: number;
     pr: PrDetail | null;
     onRefreshPr: () => void;
+    onSyncQueue?: (patch: Partial<QueuePr>) => void;
     onAdvanced: (action: "merged" | "closed") => void;
     onSkip?: () => void;
     notify: Notify;
@@ -118,13 +150,20 @@ export default function ReviewPanel({
     const [showRaw, setShowRaw] = useState(false);
     const refreshRef = useRef(onRefreshPr);
     refreshRef.current = onRefreshPr;
+    const syncQueueRef = useRef(onSyncQueue);
+    syncQueueRef.current = onSyncQueue;
 
     const loadFiles = useCallback(() => {
         api<PrFile[]>(`/api/pr/${prNumber}/files`).then(setFiles).catch(() => setFiles([]));
     }, [prNumber]);
 
     const loadComments = useCallback(() => {
-        api<PrComment[]>(`/api/pr/${prNumber}/comments`).then(setComments).catch(() => setComments([]));
+        api<PrComment[]>(`/api/pr/${prNumber}/comments`)
+            .then((list) => {
+                setComments(list);
+                syncQueueRef.current?.({ commentsCount: list.length });
+            })
+            .catch(() => setComments([]));
     }, [prNumber]);
 
     const loadEvents = useCallback(() => {
@@ -132,7 +171,12 @@ export default function ReviewPanel({
     }, [prNumber]);
 
     const loadChecks = useCallback(() => {
-        api<ChecksPayload>(`/api/pr/${prNumber}/checks`).then(setChecks).catch(() => {});
+        api<ChecksPayload>(`/api/pr/${prNumber}/checks`)
+            .then((payload) => {
+                setChecks(payload);
+                syncQueueRef.current?.({ checks: summarizeChecks(payload) });
+            })
+            .catch(() => {});
     }, [prNumber]);
 
     useEffect(() => {
@@ -151,9 +195,13 @@ export default function ReviewPanel({
         if (!checks) return;
         const active =
             checks.checkRuns.some((c) => c.status !== "completed") ||
-            checks.workflowRuns.some((r) => r.status !== "completed");
+            checks.workflowRuns.some(
+                (r) =>
+                    r.status !== "completed" ||
+                    r.conclusion === "action_required",
+            );
         if (!active) return;
-        const id = setInterval(loadChecks, 12_000);
+        const id = setInterval(loadChecks, 8_000);
         return () => clearInterval(id);
     }, [checks, loadChecks]);
 
@@ -162,7 +210,11 @@ export default function ReviewPanel({
         if (checks.checkRuns.some((c) => c.status !== "completed")) return;
         if (
             checks.workflowRuns.some(
-                (r) => r.status !== "completed" && r.status !== "waiting" && r.status !== "action_required",
+                (r) =>
+                    (r.status !== "completed" &&
+                        r.status !== "waiting" &&
+                        r.status !== "action_required") ||
+                    r.conclusion === "action_required",
             )
         )
             return;
@@ -175,8 +227,10 @@ export default function ReviewPanel({
         return () => clearTimeout(id);
     }, [pr]);
 
-    const onLabelsSaved = () => {
+    const onLabelsSaved = (labels: PrLabel[]) => {
+        syncQueueRef.current?.({ labels });
         onRefreshPr();
+        loadEvents();
     };
 
     const parsed = pr ? parsePrBody(pr.body) : null;
@@ -191,13 +245,25 @@ export default function ReviewPanel({
     const jsonReq = parsed?.requirements.find((r) => /json/i.test(r.label));
     const jsonOk = jsonReq ? jsonReq.checked : null;
 
+    const ciNeedsApproval = !!checks?.workflowRuns.some(
+        (r) =>
+            r.status === "waiting" ||
+            r.status === "action_required" ||
+            r.conclusion === "action_required",
+    );
     const ciFailing = !!checks?.checkRuns.some(
         (c) => c.status === "completed" && c.conclusion && !["success", "neutral", "skipped"].includes(c.conclusion),
     );
-    const ciPending = !!checks?.checkRuns.some((c) => c.status !== "completed");
-    const ciOk = checks ? !ciFailing && !ciPending && checks.checkRuns.length > 0 : null;
+    const ciPending =
+        !!checks?.checkRuns.some((c) => c.status !== "completed") ||
+        !!checks?.workflowRuns.some(
+            (r) => r.status !== "completed" && r.status !== "waiting" && r.status !== "action_required",
+        );
+    const ciOk = checks
+        ? !ciFailing && !ciPending && !ciNeedsApproval && checks.checkRuns.length > 0
+        : null;
 
-    const validOk = pr ? pr.mergeable !== false && !ciFailing : null;
+    const validOk = pr ? pr.mergeable !== false && !ciFailing && !ciNeedsApproval : null;
 
     const cardSx = { bgcolor: "surfaceContainerLow", borderRadius: "28px", p: 2.5 };
 
@@ -224,34 +290,34 @@ export default function ReviewPanel({
                                 <Card sx={cardSx}>
                                     <Stack direction="row" spacing={2} sx={{ alignItems: "center", mb: 1.5 }}>
                                         <Avatar src={pr.avatarUrl} sx={{ width: 56, height: 56 }} />
-                                    <Box sx={{ flex: 1, minWidth: 0 }}>
-                                        <Stack direction="row" spacing={1} sx={{ alignItems: "center", mb: 0.25 }}>
-                                            <Typography variant="h5" noWrap title={pr.author}>
-                                                {pr.author}
+                                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                                            <Stack direction="row" spacing={1} sx={{ alignItems: "center", mb: 0.25 }}>
+                                                <Typography variant="h5" noWrap title={pr.author}>
+                                                    {pr.author}
+                                                </Typography>
+                                                {pr.authorAssociation && (
+                                                    <Chip
+                                                        size="small"
+                                                        label={pr.authorAssociation.replace(/_/g, " ").toLowerCase()}
+                                                        sx={{
+                                                            height: 20,
+                                                            fontSize: 11,
+                                                            fontWeight: 700,
+                                                            textTransform: "capitalize",
+                                                            bgcolor: assocColor(pr.authorAssociation),
+                                                            color: assocTextColor(pr.authorAssociation),
+                                                        }}
+                                                    />
+                                                )}
+                                            </Stack>
+                                            <Typography
+                                                variant="body2"
+                                                sx={{ color: "text.secondary", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                                                title={pr.title}
+                                            >
+                                                {pr.title}
                                             </Typography>
-                                            {pr.authorAssociation && (
-                                                <Chip
-                                                    size="small"
-                                                    label={pr.authorAssociation.replace(/_/g, " ").toLowerCase()}
-                                                    sx={{
-                                                        height: 20,
-                                                        fontSize: 11,
-                                                        fontWeight: 700,
-                                                        textTransform: "capitalize",
-                                                        bgcolor: assocColor(pr.authorAssociation),
-                                                        color: assocTextColor(pr.authorAssociation),
-                                                    }}
-                                                />
-                                            )}
-                                        </Stack>
-                                        <Typography
-                                            variant="body2"
-                                            sx={{ color: "text.secondary", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-                                            title={pr.title}
-                                        >
-                                            {pr.title}
-                                        </Typography>
-                                    </Box>
+                                        </Box>
                                         <Button
                                             variant="contained"
                                             size="small"
@@ -297,7 +363,10 @@ export default function ReviewPanel({
                                         <StatusPill label="Template check" ok={templateOk} />
                                         <StatusPill label="Website preview" ok={previewOk} />
                                         {jsonReq && <StatusPill label="JSON valid" ok={jsonOk} />}
-                                        <StatusPill label="Checks" ok={ciOk} />
+                                        <StatusPill
+                                            label={ciNeedsApproval ? "Checks (needs approval)" : "Checks"}
+                                            ok={ciOk}
+                                        />
                                         <StatusPill label="Valid" ok={validOk} />
                                     </Stack>
                                 </Card>
@@ -449,7 +518,14 @@ export default function ReviewPanel({
                                     <Typography variant="subtitle2" sx={{ color: "text.secondary", fontWeight: 700, mb: 1, px: 0.5 }}>
                                         Checks
                                     </Typography>
-                                    <ChecksTab prNumber={prNumber} checks={checks} onRefresh={loadChecks} />
+                                    <ChecksTab
+                                        prNumber={prNumber}
+                                        checks={checks}
+                                        onRefresh={() => {
+                                            loadChecks();
+                                            onRefreshPr();
+                                        }}
+                                    />
                                 </Box>
 
                                 {/* Files */}
@@ -465,7 +541,16 @@ export default function ReviewPanel({
                                     <Typography variant="subtitle2" sx={{ color: "text.secondary", fontWeight: 700, mb: 1, px: 0.5 }}>
                                         Comments
                                     </Typography>
-                                    <CommentsTab prNumber={prNumber} comments={comments} events={events} onRefresh={() => { loadComments(); loadEvents(); }} />
+                                    <CommentsTab
+                                        prNumber={prNumber}
+                                        comments={comments}
+                                        events={events}
+                                        onRefresh={() => {
+                                            loadComments();
+                                            loadEvents();
+                                            onRefreshPr();
+                                        }}
+                                    />
                                 </Box>
                             </Stack>
                         </Box>
@@ -480,6 +565,7 @@ export default function ReviewPanel({
                                 onSkipped={() => onSkip?.()}
                                 onLabelsChanged={() => onRefreshPr()}
                                 onRefreshPr={onRefreshPr}
+                                onRefreshChecks={loadChecks}
                                 notify={notify}
                             />
                         </Box>

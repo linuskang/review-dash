@@ -75,12 +75,12 @@ function LogBlock({ jobs }: { jobs: JobLogs[] }) {
                             borderRadius: "12px",
                             bgcolor: "surfaceContainerLowest",
                             border: "1px solid",
-                                                        fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                            fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
                             fontSize: 11.5,
                             lineHeight: 1.5,
                             whiteSpace: "pre-wrap",
                             wordBreak: "break-word",
-                       }}
+                        }}
                     >
                         {job.logs}
                     </Box>
@@ -118,6 +118,7 @@ export default function ChecksTab({
                 body: JSON.stringify({ runId, action }),
             });
             setTimeout(onRefresh, 1500);
+            setTimeout(onRefresh, 4500);
         } finally {
             setBusy(null);
         }
@@ -141,7 +142,10 @@ export default function ChecksTab({
     };
 
     const pendingApproval = checks.workflowRuns.filter(
-        (r) => r.status === "waiting" || r.status === "action_required",
+        (r) =>
+            r.status === "waiting" ||
+            r.status === "action_required" ||
+            r.conclusion === "action_required",
     );
     const failedRuns = checks.workflowRuns.filter(
         (r) =>
@@ -154,7 +158,7 @@ export default function ChecksTab({
         <Stack spacing={2.5}>
             {/* Runs awaiting maintainer approval */}
             {pendingApproval.length > 0 && (
-                <Card sx={{ bgcolor: "tertiaryContainer", }}>
+                <Card sx={{ bgcolor: "tertiaryContainer" }}>
                     <CardContent sx={{ p: 2.5, "&:last-child": { pb: 2.5 } }}>
                         <Typography variant="subtitle1" sx={{ color: "onTertiaryContainer", mb: 0.5 }}>
                             {pendingApproval.length} workflow
@@ -175,7 +179,7 @@ export default function ChecksTab({
                                         borderRadius: "16px",
                                         px: 2,
                                         py: 1.25,
-                                   }}
+                                    }}
                                 >
                                     <Typography variant="body2" sx={{ flex: 1, fontWeight: 600 }}>
                                         {run.name}
@@ -208,7 +212,7 @@ export default function ChecksTab({
             )}
 
             {/* Check runs */}
-            <Card sx={{ bgcolor: "surfaceContainerLow", }}>
+            <Card sx={{ bgcolor: "surfaceContainerLow" }}>
                 <CardContent sx={{ p: 2.5, "&:last-child": { pb: 2.5 } }}>
                     <Typography variant="subtitle1" sx={{ mb: 1.5 }}>
                         Checks
@@ -249,7 +253,7 @@ export default function ChecksTab({
 
             {/* Failed workflow runs with logs */}
             {failedRuns.length > 0 && (
-                <Card sx={{ bgcolor: "surfaceContainerLow", }}>
+                <Card sx={{ bgcolor: "surfaceContainerLow" }}>
                     <CardContent sx={{ p: 2.5, "&:last-child": { pb: 2.5 } }}>
                         <Typography variant="subtitle1" sx={{ mb: 1.5 }}>
                             Failed runs
@@ -266,7 +270,7 @@ export default function ChecksTab({
                                             borderRadius: "16px",
                                             px: 2,
                                             py: 1.25,
-                                       }}
+                                        }}
                                     >
                                         <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
                                             <Typography

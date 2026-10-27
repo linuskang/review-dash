@@ -28,8 +28,10 @@ export const GET = withAuth(async (_req, { session }) => {
                     if (!prev || r.id > prev.id) latest.set(r.name, r);
                 }
                 const runs = Array.from(latest.values());
+                // If PR check runs exist but "Tests" hasn't spawned yet, CI is awaiting maintainer approval or queued.
+                const missingTests = runs.length > 0 && !latest.has("Tests") ? 1 : 0;
                 checks = {
-                    total: runs.length,
+                    total: runs.length + missingTests,
                     passed: runs.filter(
                         (r) =>
                             r.status === "completed" &&
@@ -41,7 +43,7 @@ export const GET = withAuth(async (_req, { session }) => {
                             !!r.conclusion &&
                             !["success", "neutral", "skipped"].includes(r.conclusion),
                     ).length,
-                    pending: runs.filter((r) => r.status !== "completed").length,
+                    pending: runs.filter((r) => r.status !== "completed").length + missingTests,
                 };
             } catch {
                 checks = undefined;

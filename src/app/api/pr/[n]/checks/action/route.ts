@@ -11,9 +11,16 @@ export const POST = withAuth(async (req, { session }) => {
         return Response.json({ error: "invalid_request" }, { status: 400 });
     }
     const suffix = action === "rerun-failed" ? "/rerun-failed-jobs" : `/${action}`;
-    const res = await gh(session.token, `/repos/${REPO}/actions/runs/${runId}${suffix}`, {
+    let res = await gh(session.token, `/repos/${REPO}/actions/runs/${runId}${suffix}`, {
         method: "POST",
     });
+    // Fallback to /rerun if /approve is rejected (e.g. run already approved or different gate).
+    if (!res.ok && action === "approve") {
+        const fallback = await gh(session.token, `/repos/${REPO}/actions/runs/${runId}/rerun`, {
+            method: "POST",
+        });
+        if (fallback.ok) res = fallback;
+    }
     // These endpoints return 201 with an empty body on success.
     return pass({ ok: res.ok, status: res.status, data: res.data ?? { done: res.ok } });
 });

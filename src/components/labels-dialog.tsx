@@ -22,35 +22,45 @@ const GROUPS: [string, (name: string) => boolean][] = [
     ["Other", () => true],
 ];
 
-export default function LabelsDialog({
+let cachedRepoLabels: RepoLabel[] | null = null;
+
+export function LabelsPicker({
     open,
-    onClose,
-    prNumber,
-    current,
-    onSaved,
+    selected,
+    onToggle,
+    autoFocus = false,
+    onLoadedChange,
 }: {
     open: boolean;
-    onClose: () => void;
-    prNumber: number;
-    current: PrLabel[];
-    onSaved: (labels: PrLabel[]) => void;
+    selected: Set<string>;
+    onToggle: (name: string) => void;
+    autoFocus?: boolean;
+    onLoadedChange?: (loaded: boolean) => void;
 }) {
-    const [all, setAll] = useState<RepoLabel[] | null>(null);
-    const [selected, setSelected] = useState<Set<string>>(new Set());
-    const [saving, setSaving] = useState(false);
+    const [all, setAll] = useState<RepoLabel[] | null>(cachedRepoLabels);
     const [query, setQuery] = useState("");
     const searchRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
+        onLoadedChange?.(Boolean(all));
+    }, [all, onLoadedChange]);
+
+    useEffect(() => {
         if (open) {
-            setSelected(new Set(current.map((l) => l.name)));
             setQuery("");
             if (!all) {
-                api<RepoLabel[]>("/api/labels").then(setAll).catch(() => setAll([]));
+                api<RepoLabel[]>("/api/labels")
+                    .then((list) => {
+                        cachedRepoLabels = list;
+                        setAll(list);
+                    })
+                    .catch(() => setAll([]));
             }
-            setTimeout(() => searchRef.current?.focus(), 100);
+            if (autoFocus) {
+                setTimeout(() => searchRef.current?.focus(), 100);
+            }
         }
-    }, [open, current, all]);
+    }, [open, all, autoFocus]);
 
     const grouped = useMemo(() => {
         if (!all) return [];
@@ -64,6 +74,95 @@ export default function LabelsDialog({
             return { title, items };
         }).filter((g) => g.items.length > 0);
     }, [all, query]);
+
+    const handleChipClick = (name: string) => {
+        onToggle(name);
+        setQuery("");
+        searchRef.current?.focus();
+    };
+
+    return (
+        <Box>
+            <TextField
+                inputRef={searchRef}
+                autoFocus={autoFocus}
+                fullWidth
+                size="small"
+                placeholder="Search labels…"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                sx={{ mb: 2 }}
+            />
+            {!all ? (
+                <Typography sx={{ color: "text.secondary" }}>Loading…</Typography>
+            ) : grouped.length === 0 ? (
+                <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                    No matching labels.
+                </Typography>
+            ) : (
+                grouped.map((group) => (
+                    <Box key={group.title} sx={{ mb: 2.5, "&:last-child": { mb: 0 } }}>
+                        <Typography
+                            variant="subtitle2"
+                            sx={{
+                                color: "text.secondary",
+                                display: "block",
+                                mb: 1,
+                                fontWeight: 700,
+                            }}
+                        >
+                            {group.title}
+                        </Typography>
+                        <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
+                            {group.items.map((l) => {
+                                const active = selected.has(l.name);
+                                return (
+                                    <Chip
+                                        key={l.name}
+                                        label={l.name}
+                                        onClick={() => handleChipClick(l.name)}
+                                        title={l.description || l.name}
+                                        sx={{
+                                            fontWeight: 600,
+                                            border: "1.5px solid",
+                                            borderColor: active ? `#${l.color}` : "outlineVariant",
+                                            bgcolor: active ? `#${l.color}26` : "transparent",
+                                            color: active ? `#${l.color}` : "text.secondary",
+                                            "&:hover": { bgcolor: `#${l.color}33` },
+                                        }}
+                                    />
+                                );
+                            })}
+                        </Box>
+                    </Box>
+                ))
+            )}
+        </Box>
+    );
+}
+
+export default function LabelsDialog({
+    open,
+    onClose,
+    prNumber,
+    current,
+    onSaved,
+}: {
+    open: boolean;
+    onClose: () => void;
+    prNumber: number;
+    current: PrLabel[];
+    onSaved: (labels: PrLabel[]) => void;
+}) {
+    const [selected, setSelected] = useState<Set<string>>(new Set());
+    const [saving, setSaving] = useState(false);
+    const [loaded, setLoaded] = useState(false);
+
+    useEffect(() => {
+        if (open) {
+            setSelected(new Set(current.map((l) => l.name)));
+        }
+    }, [open, current]);
 
     const toggle = (name: string) =>
         setSelected((prev) => {
@@ -94,63 +193,19 @@ export default function LabelsDialog({
         <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
             <DialogTitle>Edit labels</DialogTitle>
             <DialogContent dividers>
-                <TextField
-                    inputRef={searchRef}
+                <LabelsPicker
+                    open={open}
+                    selected={selected}
+                    onToggle={toggle}
                     autoFocus
-                    fullWidth
-                    size="small"
-                    placeholder="Search labels…"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    sx={{ mb: 2 }}
+                    onLoadedChange={setLoaded}
                 />
-                {!all ? (
-                    <Typography sx={{
-                        color: "text.secondary"
-                    }}>Loading…</Typography>
-                ) : (
-                    grouped.map((group) => (
-                        <Box key={group.title} sx={{ mb: 2.5 }}>
-                            <Typography
-                                variant="subtitle2"
-                                sx={{
-                                    color: "text.secondary",
-                                    display: "block",
-                                    mb: 1,
-                                    fontWeight: 700
-                                }}>
-                                {group.title}
-                            </Typography>
-                            <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
-                                {group.items.map((l) => {
-                                    const active = selected.has(l.name);
-                                    return (
-                                        <Chip
-                                            key={l.name}
-                                            label={l.name}
-                                            onClick={() => toggle(l.name)}
-                                            title={l.description || l.name}
-                                            sx={{
-                                                fontWeight: 600,
-                                                border: "1.5px solid",
-                                                borderColor: active ? `#${l.color}` : "outlineVariant",
-                                                bgcolor: active ? `#${l.color}26` : "transparent",
-                                                color: active ? `#${l.color}` : "text.secondary",
-                                                "&:hover": { bgcolor: `#${l.color}33` },
-                                            }}
-                                        />
-                                    );
-                                })}
-                            </Box>
-                        </Box>
-                    ))
-                )}
             </DialogContent>
             <DialogActions>
                 <Button variant="text" onClick={onClose}>
                     Cancel
                 </Button>
-                <Button variant="contained" onClick={save} disabled={saving || !all}>
+                <Button variant="contained" onClick={save} disabled={saving || !loaded}>
                     Save labels
                 </Button>
             </DialogActions>

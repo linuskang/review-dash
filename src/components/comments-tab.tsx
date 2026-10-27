@@ -31,7 +31,13 @@ import DeleteOutlineRounded from "@mui/icons-material/DeleteOutlineRounded";
 import AddRounded from "@mui/icons-material/AddRounded";
 import RestartAltRounded from "@mui/icons-material/RestartAltRounded";
 import { api, timeAgo } from "@/lib/client";
-import { DEFAULT_CANNED, loadCanned, resetCanned, saveCanned } from "@/lib/canned";
+import {
+    CANNED_CHANGED_EVENT,
+    DEFAULT_CANNED,
+    loadCanned,
+    resetCanned,
+    saveCanned,
+} from "@/lib/canned";
 import Markdown from "./markdown";
 import type { CannedResponse, PrComment, PrEvent } from "@/lib/types";
 
@@ -52,7 +58,12 @@ export default function CommentsTab({
     const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
     const [manageOpen, setManageOpen] = useState(false);
 
-    useEffect(() => setCanned(loadCanned()), []);
+    useEffect(() => {
+        const sync = () => setCanned(loadCanned());
+        sync();
+        window.addEventListener(CANNED_CHANGED_EVENT, sync);
+        return () => window.removeEventListener(CANNED_CHANGED_EVENT, sync);
+    }, []);
 
     const send = async () => {
         if (!draft.trim()) return;
@@ -246,7 +257,7 @@ export default function CommentsTab({
     );
 }
 
-function CannedManager({
+export function CannedManager({
     open,
     onClose,
     canned,
@@ -370,6 +381,7 @@ function CannedManager({
         </Dialog>
     );
 }
+
 function buildTimeline(comments: PrComment[], events: PrEvent[]) {
     const items: { type: "comment" | "event"; data: any; date: string }[] = [];
     for (const c of comments) items.push({ type: "comment", data: c, date: c.createdAt });

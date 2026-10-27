@@ -108,6 +108,7 @@ export const DEFAULT_CANNED: CannedResponse[] = [
 ];
 
 const KEY = "isd_canned";
+export const CANNED_CHANGED_EVENT = "isd_canned_changed";
 
 export function loadCanned(): CannedResponse[] {
     try {
@@ -121,8 +122,10 @@ export function loadCanned(): CannedResponse[] {
 
 export function saveCanned(list: CannedResponse[]) {
     window.localStorage.setItem(KEY, JSON.stringify(list));
+    window.dispatchEvent(new Event(CANNED_CHANGED_EVENT));
 }
 
 export function resetCanned() {
     window.localStorage.removeItem(KEY);
+    window.dispatchEvent(new Event(CANNED_CHANGED_EVENT));
 }

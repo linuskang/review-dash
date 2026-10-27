@@ -1,18 +1,21 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
     Alert,
     Box,
     Button,
-    ButtonGroup,
     Checkbox,
-    Chip,
+    CircularProgress,
     Dialog,
     DialogActions,
     DialogContent,
     DialogTitle,
     FormControlLabel,
+    IconButton,
+    ListItemText,
+    Menu,
+    MenuItem,
     Paper,
     Stack,
     TextField,
@@ -23,9 +26,15 @@ import CheckRounded from "@mui/icons-material/CheckRounded";
 import MergeRounded from "@mui/icons-material/Merge";
 import CloseRounded from "@mui/icons-material/CloseRounded";
 import SkipNextRounded from "@mui/icons-material/SkipNextRounded";
+import QuickreplyRounded from "@mui/icons-material/QuickreplyRounded";
+import EditNoteRounded from "@mui/icons-material/EditNoteRounded";
+import PlayCircleFilledWhiteRounded from "@mui/icons-material/PlayCircleFilledWhiteRounded";
+import SyncRounded from "@mui/icons-material/SyncRounded";
 import { api } from "@/lib/client";
-import { loadCanned } from "@/lib/canned";
-import type { ChecksPayload, PrDetail } from "@/lib/types";
+import { CANNED_CHANGED_EVENT, DEFAULT_CANNED, loadCanned, saveCanned } from "@/lib/canned";
+import { LabelsPicker } from "./labels-dialog";
+import { CannedManager } from "./comments-tab";
+import type { CannedResponse, ChecksPayload, PrDetail } from "@/lib/types";
 
 type Notify = (message: string, severity?: "success" | "error" | "info") => void;
 
@@ -38,6 +47,7 @@ export default function ActionBar({
     onSkipped,
     onLabelsChanged,
     onRefreshPr,
+    onRefreshChecks,
     notify,
 }: {
     pr: PrDetail;
@@ -48,6 +58,7 @@ export default function ActionBar({
     onSkipped?: () => void;
     onLabelsChanged: (names: string[]) => void;
     onRefreshPr?: () => void;
+    onRefreshChecks?: () => void;
     notify: Notify;
 }) {
     const [busy, setBusy] = useState<string | null>(null);
@@ -104,6 +115,23 @@ export default function ActionBar({
             onMerged();
         });
 
+    const updateBranch = () =>
+        run("update-branch", async () => {
+            await api(`/api/pr/${pr.number}/update-branch`, {
+                method: "POST",
+                body: JSON.stringify({ expectedHeadSha: pr.headSha }),
+            });
+            notify(`Updated branch for #${pr.number}`);
+            setTimeout(() => {
+                onRefreshPr?.();
+                onRefreshChecks?.();
+            }, 1500);
+            setTimeout(() => {
+                onRefreshPr?.();
+                onRefreshChecks?.();
+            }, 4500);
+        });
+
     const failing =
         checks?.checkRuns.filter(
             (c) =>
@@ -111,34 +139,101 @@ export default function ActionBar({
                 c.conclusion &&
                 !["success", "neutral", "skipped"].includes(c.conclusion),
         ) ?? [];
-    const pending = checks?.checkRuns.filter((c) => c.status !== "completed") ?? [];
+    const pendingCheckRuns =
+        checks?.checkRuns.filter((c) => c.status !== "completed") ?? [];
     const awaitingApproval =
-        checks?.workflowRuns.filter((r) => r.status === "waiting" || r.status === "action_required") ??
-        [];
+        checks?.workflowRuns.filter(
+            (r) =>
+                r.status === "waiting" ||
+                r.status === "action_required" ||
+                r.conclusion === "action_required",
+        ) ?? [];
+    const pendingWorkflows =
+        checks?.workflowRuns.filter(
+            (r) =>
+                r.status !== "completed" &&
+                r.status !== "waiting" &&
+                r.status !== "action_required",
+        ) ?? [];
+    const hasTestsPassed = !!checks?.checkRuns.some(
+        (c) => c.name === "Tests" && c.status === "completed" && c.conclusion === "success",
+    );
+    const pendingCount = pendingCheckRuns.length + pendingWorkflows.length;
+
+    const approveCi = () =>
+        run("approve-ci", async () => {
+            await Promise.all(
+                awaitingApproval.map((r) =>
+                    api(`/api/pr/${pr.number}/checks/action`, {
+                        method: "POST",
+                        body: JSON.stringify({ runId: r.id, action: "approve" }),
+                    }),
+                ),
+            );
+            notify(`Approved CI workflow${awaitingApproval.length > 1 ? "s" : ""} for #${pr.number}`);
+            setTimeout(() => {
+                onRefreshChecks?.();
+                onRefreshPr?.();
+            }, 1500);
+            setTimeout(() => {
+                onRefreshChecks?.();
+                onRefreshPr?.();
+            }, 4500);
+        });
 
     // Reasons merging is blocked right now.
     const blockReasons: string[] = [];
     const warnings: string[] = [];
-    if (failing.length > 0) blockReasons.push(`${failing.length} failing check${failing.length > 1 ? "s" : ""}`);
-    if (pr.mergeable === false) blockReasons.push("merge conflict");
-    else if (pr.mergeableState === "dirty") blockReasons.push("merge conflict");
-    else if (pr.mergeableState === "blocked") warnings.push("branch protection (auto-approves on merge)");
-    else if (pr.mergeableState === "unstable") blockReasons.push("required checks are failing");
-    const mergeBlocked = blockReasons.length > 0;
+    if (!checks) {
+        blockReasons.push("loading checks");
+    } else {
+        if (awaitingApproval.length > 0) {
+            blockReasons.push(
+                `${awaitingApproval.length} workflow${awaitingApproval.length > 1 ? "s" : ""} waiting for CI approval`,
+            );
+        }
+        if (pendingCount > 0) {
+            blockReasons.push("checks are still pending");
+        }
+        if (failing.length > 0) {
+            blockReasons.push(`${failing.length} failing check${failing.length > 1 ? "s" : ""}`);
+        }
+        if (
+            awaitingApproval.length === 0 &&
+            pendingCount === 0 &&
+            failing.length === 0 &&
+            !hasTestsPassed
+        ) {
+            blockReasons.push("Tests check has not passed yet");
+        }
+    }
+    if (pr.mergeable === false || pr.mergeableState === "dirty") {
+        blockReasons.push("merge conflict");
+    } else if (pr.mergeableState === "behind") {
+        blockReasons.push("branch is behind base (update branch first)");
+    } else if (pr.mergeableState === "blocked") {
+        warnings.push("branch protection (auto-approves on merge)");
+    } else if (pr.mergeableState === "unstable") {
+        blockReasons.push("required checks are failing");
+    }
     const mergeUnknown = pr.mergeable === null; // GitHub still computing
+    const mergeBlocked = blockReasons.length > 0 || mergeUnknown;
 
-    const summary = mergeBlocked
-        ? { color: "error.main", text: "Merge blocked" }
-        : !checks
-          ? null
-          : failing.length > 0
-            ? { color: "error.main", text: `${failing.length} check${failing.length > 1 ? "s" : ""} failing` }
-            : awaitingApproval.length > 0
-              ? { color: "warning.main", text: "CI needs approval" }
-              : pending.length > 0
-                ? { color: "warning.main", text: "Checks running" }
-                : { color: "success.main", text: "Checks passing" };
-    const showSummary = mergeBlocked || awaitingApproval.length > 0;
+    const summary = awaitingApproval.length > 0
+        ? { color: "warning.main", text: "CI needs approval" }
+        : pendingCount > 0 || !checks || mergeUnknown
+          ? { color: "warning.main", text: "Checks running" }
+          : failing.length > 0 || blockReasons.length > 0
+            ? { color: "error.main", text: "Merge blocked" }
+            : { color: "success.main", text: "Checks passing" };
+    const showSummary = mergeBlocked || awaitingApproval.length > 0 || pendingCount > 0;
+
+    const btnSx = {
+        minHeight: 38,
+        px: 1.5,
+        whiteSpace: "nowrap",
+        flexShrink: 0,
+    } as const;
 
     return (
         <>
@@ -149,9 +244,10 @@ export default function ActionBar({
                     bottom: 12,
                     zIndex: 10,
                     display: "flex",
-                    gap: 1,
+                    flexWrap: "wrap",
+                    gap: 0.75,
                     alignItems: "center",
-                    px: 2,
+                    px: 1.5,
                     py: 1,
                     borderRadius: "20px",
                     bgcolor: "surfaceContainerHigh",
@@ -161,12 +257,20 @@ export default function ActionBar({
                 {showSummary && summary && (
                     <Tooltip
                         title={
-                            failing.length
-                                ? failing.map((c) => c.name).join(", ")
-                                : summary.text
+                            awaitingApproval.length
+                                ? `Waiting for approval: ${awaitingApproval.map((r) => r.name).join(", ")}`
+                                : failing.length
+                                  ? failing.map((c) => c.name).join(", ")
+                                  : blockReasons.length
+                                    ? `Can't merge: ${blockReasons.join(", ")}`
+                                    : summary.text
                         }
                     >
-                        <Stack direction="row" spacing={0.75} sx={{ alignItems: "center", pl: 0.5 }}>
+                        <Stack
+                            direction="row"
+                            spacing={0.75}
+                            sx={{ alignItems: "center", pl: 0.5, mr: 0.5, flexShrink: 0 }}
+                        >
                             <Box
                                 sx={{
                                     width: 8,
@@ -180,69 +284,152 @@ export default function ActionBar({
                                     "@keyframes pulse": { "50%": { opacity: 0.35 } },
                                 }}
                             />
-                            <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: 600 }}>
+                            <Typography
+                                variant="caption"
+                                sx={{
+                                    color: "text.secondary",
+                                    fontWeight: 600,
+                                    whiteSpace: "nowrap",
+                                    display: { xs: "none", lg: "inline" },
+                                }}
+                            >
                                 {summary.text}
                             </Typography>
                         </Stack>
                     </Tooltip>
                 )}
-                <Box sx={{ flex: 1 }} />
-                <Button
-                    variant="contained"
-                    color="inherit"
-                    size="medium"
-                    startIcon={<SkipNextRounded />}
-                    disabled={busy !== null}
-                    onClick={() => onSkipped?.()}
-                    sx={{ minHeight: 44 }}
+
+                {/* Secondary utility actions */}
+                <Tooltip
+                    title={
+                        pr.mergeableState === "behind"
+                            ? `Branch is behind ${pr.baseRef} — click to update branch`
+                            : `Update branch with latest ${pr.baseRef} changes`
+                    }
                 >
-                    Skip
-                </Button>
+                    <span>
+                        <IconButton
+                            size="small"
+                            color={pr.mergeableState === "behind" ? "warning" : "default"}
+                            disabled={busy !== null}
+                            onClick={updateBranch}
+                            sx={{
+                                width: 38,
+                                height: 38,
+                                bgcolor:
+                                    pr.mergeableState === "behind"
+                                        ? "warning.main"
+                                        : "surfaceContainerHighest",
+                                color:
+                                    pr.mergeableState === "behind"
+                                        ? "warning.contrastText"
+                                        : "text.primary",
+                                "&:hover": {
+                                    bgcolor:
+                                        pr.mergeableState === "behind"
+                                            ? "warning.dark"
+                                            : "action.selected",
+                                },
+                            }}
+                        >
+                            {busy === "update-branch" ? (
+                                <CircularProgress size={16} color="inherit" />
+                            ) : (
+                                <SyncRounded fontSize="small" />
+                            )}
+                        </IconButton>
+                    </span>
+                </Tooltip>
+
+                <Tooltip title="Skip to next PR">
+                    <span>
+                        <Button
+                            variant="contained"
+                            color="inherit"
+                            size="small"
+                            startIcon={<SkipNextRounded />}
+                            disabled={busy !== null}
+                            onClick={() => onSkipped?.()}
+                            sx={btnSx}
+                        >
+                            Skip
+                        </Button>
+                    </span>
+                </Tooltip>
+
+                <Box sx={{ flex: 1, minWidth: 4 }} />
+
+                {/* Primary review actions */}
+                {awaitingApproval.length > 0 && (
+                    <Tooltip
+                        title={`Approve & run: ${awaitingApproval.map((r) => r.name).join(", ")}`}
+                    >
+                        <Button
+                            variant="contained"
+                            color="warning"
+                            size="small"
+                            startIcon={
+                                busy === "approve-ci" ? (
+                                    <CircularProgress size={14} color="inherit" />
+                                ) : (
+                                    <PlayCircleFilledWhiteRounded />
+                                )
+                            }
+                            disabled={busy !== null}
+                            onClick={approveCi}
+                            sx={btnSx}
+                        >
+                            Approve CI
+                        </Button>
+                    </Tooltip>
+                )}
                 <Button
                     variant="contained"
                     color="error"
-                    size="medium"
+                    size="small"
                     startIcon={<CloseRounded />}
                     disabled={busy !== null}
                     onClick={() => setCloseOpen(true)}
-                    sx={{ minHeight: 44 }}
+                    sx={btnSx}
                 >
                     Close
                 </Button>
                 <Button
                     variant="contained"
                     color={approved ? "success" : "primary"}
-                    size="medium"
+                    size="small"
                     startIcon={<CheckRounded />}
                     disabled={busy !== null || approved}
                     onClick={approve}
-                    sx={{ minHeight: 44 }}
+                    sx={btnSx}
                 >
                     {approved ? "Approved" : "Approve"}
                 </Button>
                 <Tooltip
                     title={
-                        mergeBlocked
+                        blockReasons.length > 0
                             ? `Can't merge: ${blockReasons.join(", ")}.`
-                            : warnings.length
-                              ? warnings.join(", ")
-                              : mergeUnknown
-                                ? "Checking mergeability…"
+                            : mergeUnknown
+                              ? "Checking mergeability…"
+                              : warnings.length
+                                ? warnings.join(", ")
                                 : ""
                     }
-                    disableHoverListener={!mergeBlocked && !warnings.length && !mergeUnknown}
+                    disableHoverListener={!mergeBlocked && !warnings.length}
                 >
-                    <Button
-                        variant="contained"
-                        color="success"
-                        size="medium"
-                        startIcon={<MergeRounded />}
-                        disabled={busy !== null || mergeBlocked}
-                        onClick={() => setMergeOpen(true)}
-                        sx={{ minHeight: 44 }}
-                    >
-                        Merge
-                    </Button>
+                    <span>
+                        <Button
+                            variant="contained"
+                            color="success"
+                            size="small"
+                            startIcon={<MergeRounded />}
+                            disabled={busy !== null || mergeBlocked}
+                            onClick={() => setMergeOpen(true)}
+                            sx={btnSx}
+                        >
+                            Merge
+                        </Button>
+                    </span>
                 </Tooltip>
             </Paper>
 
@@ -251,10 +438,10 @@ export default function ActionBar({
                 <DialogTitle>Merge #{pr.number}?</DialogTitle>
                 <DialogContent>
                     <Stack spacing={1.5} sx={{ pt: 0.5 }}>
-                            <Typography variant="body2" sx={{ color: "text.secondary" }}>
-                                This will {!approved && "approve and "}merge the PR via a merge commit and publish the DNS records.
-                            </Typography>
-                        {mergeBlocked && (
+                        <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                            This will {!approved && "approve and "}merge the PR via a merge commit and publish the DNS records.
+                        </Typography>
+                        {blockReasons.length > 0 && (
                             <Alert severity="error">
                                 Can't merge: {blockReasons.join(", ")}.
                             </Alert>
@@ -269,12 +456,12 @@ export default function ActionBar({
                             <Alert severity="warning">
                                 {awaitingApproval.length} workflow run
                                 {awaitingApproval.length > 1 ? "s are" : " is"} waiting for approval.
-                                Approve them from the Checks tab first if required.
+                                Click &ldquo;Approve CI&rdquo; first.
                             </Alert>
                         )}
-                        {pending.length > 0 && (
+                        {pendingCount > 0 && (
                             <Alert severity="warning">
-                                {pending.length} check{pending.length > 1 ? "s" : ""} still running.
+                                Checks are still running.
                             </Alert>
                         )}
                     </Stack>
@@ -303,17 +490,18 @@ export default function ActionBar({
                 onClose={() => setCloseOpen(false)}
                 pr={pr}
                 busy={busy === "close"}
-                onConfirm={(reasonLabels, comment) =>
+                onConfirm={(selectedLabels, comment) =>
                     run("close", async () => {
-                        const toAdd = Array.from(new Set([...reasonLabels, "status: denied"]));
-                        const toRemove = (pr.labels || [])
-                            .map((l) => l.name)
-                            .filter((n) => n.startsWith("status:") && n !== "status: denied");
-                        await api(`/api/pr/${pr.number}/labels`, {
-                            method: "POST",
-                            body: JSON.stringify({ add: toAdd, remove: toRemove }),
-                        });
-                        onLabelsChanged(toAdd);
+                        const before = new Set((pr.labels || []).map((l) => l.name));
+                        const toAdd = selectedLabels.filter((n) => !before.has(n));
+                        const toRemove = [...before].filter((n) => !selectedLabels.includes(n));
+                        if (toAdd.length > 0 || toRemove.length > 0) {
+                            await api(`/api/pr/${pr.number}/labels`, {
+                                method: "POST",
+                                body: JSON.stringify({ add: toAdd, remove: toRemove }),
+                            });
+                            onLabelsChanged(selectedLabels);
+                        }
                         await api(`/api/pr/${pr.number}/close`, {
                             method: "POST",
                             body: JSON.stringify({ comment: comment || undefined }),
@@ -339,100 +527,177 @@ function CloseDialog({
     onClose: () => void;
     pr: PrDetail;
     busy: boolean;
-    onConfirm: (reasonLabels: string[], comment: string) => void;
+    onConfirm: (selectedLabels: string[], comment: string) => void;
 }) {
-    const reasons = useMemo(() => loadCanned().filter((c) => c.reasonLabel), [open]);
-    const [picked, setPicked] = useState<string[]>([]);
+    const [canned, setCanned] = useState<CannedResponse[]>(DEFAULT_CANNED);
+    const [selected, setSelected] = useState<Set<string>>(new Set());
+    const [pickedOrder, setPickedOrder] = useState<string[]>([]);
     const [comment, setComment] = useState("");
-    const [postComment, setPostComment] = useState(true);
+    const [postComment, setPostComment] = useState(false);
+    const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
+    const [manageOpen, setManageOpen] = useState(false);
+
+    useEffect(() => {
+        const sync = () => setCanned(loadCanned());
+        sync();
+        window.addEventListener(CANNED_CHANGED_EVENT, sync);
+        return () => window.removeEventListener(CANNED_CHANGED_EVENT, sync);
+    }, []);
 
     // Reset when opened.
     const [lastOpen, setLastOpen] = useState(false);
     if (open !== lastOpen) {
         setLastOpen(open);
         if (open) {
-            setPicked([]);
+            const initial = new Set(
+                (pr.labels || [])
+                    .map((l) => l.name)
+                    .filter((n) => !n.startsWith("status:")),
+            );
+            initial.add("status: denied");
+            setSelected(initial);
+            setPickedOrder([]);
             setComment("");
-            setPostComment(true);
+            setPostComment(false);
         }
     }
 
-    const toggle = (id: string) => {
-        setPicked((prev) => {
-            const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
-            const selected = reasons.filter((r) => next.includes(r.id));
-            setComment(selected.map((r) => r.body).join("\n\n"));
-            return next;
-        });
+    const toggleLabel = (name: string) => {
+        const next = new Set(selected);
+        const willBeActive = !next.has(name);
+        if (willBeActive) next.add(name);
+        else next.delete(name);
+        setSelected(next);
+
+        const nextOrder = willBeActive
+            ? [...pickedOrder.filter((x) => x !== name), name]
+            : pickedOrder.filter((x) => x !== name);
+        setPickedOrder(nextOrder);
+
+        // Build comment from toggled labels that have an associated canned response
+        const bodies = nextOrder
+            .map((labelName) => canned.find((c) => c.reasonLabel === labelName)?.body?.trim())
+            .filter((b): b is string => Boolean(b));
+        if (bodies.length > 0 || !willBeActive) {
+            setComment(bodies.join("\n\n"));
+        }
     };
 
-    const labels = picked
-        .map((id) => reasons.find((r) => r.id === id)?.reasonLabel)
-        .filter((x): x is string => Boolean(x));
+    const insertCanned = (c: CannedResponse) => {
+        setPostComment(true);
+        setComment((prev) => (prev.trim() && c.body ? `${prev}\n\n${c.body}` : c.body || prev));
+        if (c.reasonLabel) {
+            setSelected((prev) => {
+                const next = new Set(prev);
+                next.add(c.reasonLabel!);
+                return next;
+            });
+            setPickedOrder((prev) =>
+                prev.includes(c.reasonLabel!) ? prev : [...prev, c.reasonLabel!],
+            );
+        }
+        setMenuAnchor(null);
+    };
 
     return (
-        <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-            <DialogTitle>Close #{pr.number}</DialogTitle>
-            <DialogContent>
-                <Stack spacing={2} sx={{ pt: 0.5 }}>
-                    <Box>
-                        <Typography variant="subtitle2" sx={{ color: "text.secondary", fontWeight: 700 }}>
-                            Reason (adds label)
-                        </Typography>
-                        <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1, mt: 0.5 }}>
-                            {reasons.map((r) => {
-                                const isPicked = picked.includes(r.id);
-                                return (
-                                    <Chip
-                                        key={r.id}
-                                        label={r.title}
-                                        onClick={() => toggle(r.id)}
-                                        sx={{
-                                            fontWeight: 600,
-                                            border: "1.5px solid",
-                                            borderColor: isPicked ? "#D93F0B" : "outlineVariant",
-                                            bgcolor: isPicked ? "#D93F0B26" : "transparent",
-                                            color: isPicked ? "#D93F0B" : "text.secondary",
-                                        }}
-                                    />
-                                );
-                            })}
-                        </Box>
-                    </Box>
-                    <FormControlLabel
-                        control={
-                            <Checkbox
-                                checked={postComment}
-                                onChange={(e) => setPostComment(e.target.checked)}
-                            />
-                        }
-                        label="Comment before closing"
-                    />
-                    {postComment && (
-                        <TextField
-                            fullWidth
-                            multiline
-                            minRows={4}
-                            label="Comment"
-                            value={comment}
-                            onChange={(e) => setComment(e.target.value)}
+        <>
+            <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+                <DialogTitle>Close #{pr.number}</DialogTitle>
+                <DialogContent dividers>
+                    <Stack spacing={2.5}>
+                        <LabelsPicker
+                            open={open}
+                            selected={selected}
+                            onToggle={toggleLabel}
+                            autoFocus
                         />
-                    )}
-                </Stack>
-            </DialogContent>
-            <DialogActions>
-                <Button variant="text" onClick={onClose}>
-                    Cancel
-                </Button>
-                <Button
-                    variant="contained"
-                    color="error"
-                    disabled={busy}
-                    onClick={() => onConfirm(labels, postComment ? comment : "")}
-                >
-                    {busy ? "Closing…" : "Close PR"}
-                </Button>
-            </DialogActions>
-        </Dialog>
+
+                        <Box>
+                            <Stack
+                                direction="row"
+                                spacing={1}
+                                sx={{ alignItems: "center", flexWrap: "wrap", mb: 1 }}
+                            >
+                                <FormControlLabel
+                                    control={
+                                        <Checkbox
+                                            checked={postComment}
+                                            onChange={(e) => setPostComment(e.target.checked)}
+                                        />
+                                    }
+                                    label="Comment before closing"
+                                    sx={{ mr: "auto" }}
+                                />
+                                <Button
+                                    size="small"
+                                    variant="tonal"
+                                    startIcon={<QuickreplyRounded />}
+                                    onClick={(e) => setMenuAnchor(e.currentTarget)}
+                                >
+                                    Canned response
+                                </Button>
+                                <Tooltip title="Manage canned responses">
+                                    <IconButton size="small" onClick={() => setManageOpen(true)}>
+                                        <EditNoteRounded fontSize="small" />
+                                    </IconButton>
+                                </Tooltip>
+                            </Stack>
+                            {postComment && (
+                                <TextField
+                                    fullWidth
+                                    multiline
+                                    minRows={4}
+                                    label="Comment"
+                                    value={comment}
+                                    onChange={(e) => setComment(e.target.value)}
+                                />
+                            )}
+                        </Box>
+                    </Stack>
+                </DialogContent>
+                <DialogActions>
+                    <Button variant="text" onClick={onClose}>
+                        Cancel
+                    </Button>
+                    <Button
+                        variant="contained"
+                        color="error"
+                        disabled={busy}
+                        onClick={() => onConfirm([...selected], postComment ? comment : "")}
+                    >
+                        {busy ? "Closing…" : "Close PR"}
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Canned picker menu */}
+            <Menu
+                anchorEl={menuAnchor}
+                open={Boolean(menuAnchor)}
+                onClose={() => setMenuAnchor(null)}
+                slotProps={{ paper: { sx: { maxHeight: 420, width: 340 } } }}
+            >
+                {canned.map((c) => (
+                    <MenuItem key={c.id} onClick={() => insertCanned(c)}>
+                        <ListItemText
+                            primary={c.title}
+                            secondary={c.reasonLabel || undefined}
+                            slotProps={{ secondary: { variant: "caption" } }}
+                        />
+                    </MenuItem>
+                ))}
+            </Menu>
+
+            {/* Manage dialog */}
+            <CannedManager
+                open={manageOpen}
+                onClose={() => setManageOpen(false)}
+                canned={canned}
+                onChange={(list) => {
+                    setCanned(list);
+                    saveCanned(list);
+                }}
+            />
+        </>
     );
 }
