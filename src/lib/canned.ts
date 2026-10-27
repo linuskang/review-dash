@@ -2,11 +2,6 @@ import type { CannedResponse } from "./types";
 
 export const DEFAULT_CANNED: CannedResponse[] = [
     {
-        id: "lgtm",
-        title: "LGTM, merging",
-        body: "Looks good, thanks for the PR! Merging now. Your domain should be live within a few minutes once the DNS records publish. 🎉",
-    },
-    {
         id: "incomplete-pr",
         title: "Incomplete PR template",
         reasonLabel: "reason: incomplete pr",
@@ -22,19 +17,19 @@ export const DEFAULT_CANNED: CannedResponse[] = [
         id: "inaccessible",
         title: "Inaccessible website",
         reasonLabel: "reason: inaccessible website",
-        body: "I can't reach your website at the preview link you provided (it errors, times out, or is private). Please make sure the site is publicly accessible and the link is correct, then let us know.",
+        body: "I can't reach your website at the preview link you provided (it errors, times out, or is private). Please make sure the site is publicly accessible and the link is correct, and I'll review it again.",
     },
     {
         id: "not-dev",
         title: "Not dev related",
         reasonLabel: "reason: not dev related",
-        body: "is-a.dev subdomains are only for **software development** related websites (portfolios, projects, dev tools, etc.). Your website doesn't appear to meet this requirement, so we can't register this domain. Closing this PR.",
+        body: "Root subdomains are typically only for developer portfolios. If you want to place this website on a domain, use a **nested subdoman**.",
     },
     {
         id: "commercial",
         title: "Commercial usage",
         reasonLabel: "reason: commercial usage",
-        body: "is-a.dev domains cannot be used for commercial purposes per our [Terms of Service](https://is-a.dev/terms). Your website appears to be for a business / revenue-generating purpose, so we can't approve this. Closing this PR.",
+        body: "is-a.dev domains cannot be used for commercial purposes per our [Terms of Service](https://is-a.dev/terms).",
     },
     {
         id: "invalid-records",
@@ -52,7 +47,7 @@ export const DEFAULT_CANNED: CannedResponse[] = [
         id: "merge-conflict",
         title: "Merge conflict",
         reasonLabel: "reason: merge conflict",
-        body: "Your PR has a merge conflict with `main`. Please update your fork/branch with the latest changes and resolve the conflict, then this PR can be re-reviewed.",
+        body: "Your PR has a merge conflict. Please update your branch with the latest changes and resolve the conflict.",
     },
     {
         id: "unauthorized",
@@ -64,47 +59,31 @@ export const DEFAULT_CANNED: CannedResponse[] = [
         id: "impersonation",
         title: "Impersonation",
         reasonLabel: "reason: impersonation",
-        body: "This website appears to impersonate another person, project, or service. That violates our [Terms of Service](https://is-a.dev/terms). Closing this PR.",
+        body: "This website appears to impersonate another person, project, or service. That violates our [Terms of Service](https://is-a.dev/terms).",
     },
     {
         id: "abuse-risk",
         title: "Abuse risk",
         reasonLabel: "reason: abuse risk",
-        body: "This request has a high risk of being abused (e.g. phishing-like subdomain or content), so we can't approve it. Closing this PR.",
+        body: "This request has a high risk of being abused, so we can't approve it.",
     },
     {
         id: "tos-non-compliant",
         title: "TOS non-compliant",
         reasonLabel: "reason: tos non-compliant",
-        body: "Your request doesn't comply with our [Terms of Service](https://is-a.dev/terms), so we can't approve this. Closing this PR.",
+        body: "Your request doesn't comply with our [Terms of Service](https://is-a.dev/terms).",
     },
     {
         id: "nsfw",
         title: "NSFW content",
         reasonLabel: "reason: nsfw",
-        body: "Your website hosts NSFW content, which is not permitted under our [Terms of Service](https://is-a.dev/terms). Closing this PR.",
-    },
-    {
-        id: "needs-preview",
-        title: "Needs preview link",
-        body: "Please provide a **link** (not a screenshot) to your currently-live website in the Website Preview section of the PR template (e.g. `https://you.github.io` or `https://you.vercel.app`), between the start/end markers.",
+        body: "Your website hosts NSFW content, which is not permitted under our [Terms of Service](https://is-a.dev/terms).",
     },
     {
         id: "ns-records",
         title: "NS records need reasoning",
-        body: "Your PR requests NS records, which require review by the service owner. Please add your **reasoning for needing NS records** to the PR description. Requests without justification can't be approved.",
-    },
-    {
-        id: "awaiting-response",
-        title: "Awaiting user response",
-        body: "Please address the points above and reply here once done and I'll take another look. 👍",
-    },
-    {
-        id: "other",
-        title: "Other",
-        reasonLabel: "reason: other",
-        body: "",
-    },
+        body: "Your PR requests NS records, which require review by the service owner. Please add your **reasoning for needing NS records** to the PR description. Requests without justification will be denied.",
+    }
 ];
 
 const KEY = "isd_canned";
