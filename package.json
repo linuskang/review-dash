@@ -1,0 +1,39 @@
+{
+    "name": "is-a-dev-review-dash",
+    "version": "0.1.0",
+    "description": "Fast Material Design 3 PR review dashboard for is-a.dev and is-a.bot maintainers",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/linuskang/review-dash.git"
+    },
+    "scripts": {
+        "dev": "next dev",
+        "build": "next build",
+        "start": "next start",
+        "lint": "oxlint",
+        "typecheck": "tsc --noEmit"
+    },
+    "dependencies": {
+        "@emotion/cache": "^11.14.0",
+        "@emotion/react": "^11.14.0",
+        "@emotion/server": "^11.11.0",
+        "@emotion/styled": "^11.14.1",
+        "@mui/icons-material": "^9.5.0",
+        "@mui/material": "^9.5.0",
+        "@mui/material-nextjs": "^9.5.0",
+        "framer-motion": "^14.6.0",
+        "next": "^16.4.3",
+        "react": "^19.3.1",
+        "react-dom": "^19.3.1",
+        "react-markdown": "^10.1.0",
+        "remark-gfm": "^4.0.1"
+    },
+    "devDependencies": {
+        "@types/node": "^24.3.0",
+        "@types/react": "^19.2.2",
+        "@types/react-dom": "^19.2.2",
+        "oxlint": "^1.90.0",
+        "typescript": "^5.9.2"
+    }
+}
