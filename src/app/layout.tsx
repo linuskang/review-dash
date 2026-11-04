@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Google_Sans } from "next/font/google";
 import ThemeRegistry from "@/components/theme-registry";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 
 const googleSans = Google_Sans({
     subsets: ["latin"],
@@ -28,6 +29,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </head>
             <body>
                 <ThemeRegistry>{children}</ThemeRegistry>
+                <SpeedInsights />
             </body>
         </html>
     );
