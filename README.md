@@ -47,7 +47,7 @@ The standard GitHub web interface can be cumbersome when reviewing dozens of dom
 ### Prerequisites
 
 - Node.js 20 or later
-- npm 10 or later
+- pnpm 9 or later
 - A GitHub OAuth Application ([Register here](https://github.com/settings/developers))
   - **Homepage URL**: `http://localhost:3000`
   - **Authorization callback URL**: `http://localhost:3000/api/auth/callback`
@@ -62,7 +62,7 @@ The standard GitHub web interface can be cumbersome when reviewing dozens of dom
 
 2. Install dependencies:
    ```sh
-   npm install
+   pnpm install
    ```
 
 3. Set up environment variables:
@@ -79,7 +79,7 @@ The standard GitHub web interface can be cumbersome when reviewing dozens of dom
 
 4. Run the development server:
    ```sh
-   npm run dev
+   pnpm dev
    ```
    Open [http://localhost:3000](http://localhost:3000) to start reviewing.
 
@@ -87,11 +87,11 @@ The standard GitHub web interface can be cumbersome when reviewing dozens of dom
 
 | Command | Description |
 | ------- | ----------- |
-| `npm run dev` | Starts the Next.js development server with Turbopack |
-| `npm run build` | Builds the production bundle |
-| `npm start` | Runs the production server |
-| `npm run lint` | Runs the fast Oxlint linter across all source files |
-| `npm run typecheck` | Validates TypeScript types across the codebase |
+| `pnpm dev` | Starts the Next.js development server with Turbopack |
+| `pnpm build` | Builds the production bundle |
+| `pnpm start` | Runs the production server |
+| `pnpm lint` | Runs the fast Oxlint linter across all source files |
+| `pnpm typecheck` | Validates TypeScript types across the codebase |
 
 ## Environment Variables
 

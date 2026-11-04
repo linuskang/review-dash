@@ -17,18 +17,15 @@ for is-a-dev/register maintainers, authed via GitHub OAuth (push access to the r
 
 ## Run
 
-No system Node required — a portable one lives in `.tools/node`:
-
 ```sh
-export PATH="$PWD/.tools/node/bin:$PATH"
-npm run dev   # or: npm run build && npm start
+pnpm dev   # or: pnpm build && pnpm start
 ```
 
 Env: copy `.env.local.example` → `.env.local`.
 
 ## Test
 
-- `npx tsc --noEmit` and `npm run build` must pass.
+- `pnpm typecheck` and `pnpm build` must pass.
 - Headless UI smoke test (needs the dev server running and dev-token auth enabled):
   `node .tools/e2e/smoke.js` — screenshots land in the opencode tmp dir.
 
