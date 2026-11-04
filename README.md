@@ -10,7 +10,6 @@ A fast, Material Design 3 (Expressive) reviewer dashboard for reviewing pull req
 
 [![CI](https://github.com/linuskang/review-dash/actions/workflows/ci.yml/badge.svg)](https://github.com/linuskang/review-dash/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Next.js](https://img.shields.io/badge/Next.js-16-black.svg)](https://nextjs.org/)
 
 </div>
 
