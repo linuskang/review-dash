@@ -41,6 +41,7 @@ type Notify = (message: string, severity?: "success" | "error" | "info") => void
 export default function ActionBar({
     pr,
     checks,
+    ownerBlocked,
     onApproved,
     onMerged,
     onClosed,
@@ -51,6 +52,7 @@ export default function ActionBar({
 }: {
     pr: PrDetail;
     checks: ChecksPayload | null;
+    ownerBlocked?: boolean;
     onApproved: () => void;
     onMerged: (alreadyApproved: boolean) => void;
     onClosed: (selectedLabels: string[], comment: string) => void;
@@ -169,6 +171,9 @@ export default function ActionBar({
     // Reasons merging is blocked right now.
     const blockReasons: string[] = [];
     const warnings: string[] = [];
+    if (ownerBlocked) {
+        blockReasons.push("subdomain owner mismatch (unless ci bypass owner check is applied)");
+    }
     if (!checks) {
         blockReasons.push("loading checks");
     } else {

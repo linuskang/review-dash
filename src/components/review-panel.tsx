@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
+    Alert,
     Avatar,
     Box,
     Button,
@@ -22,7 +23,7 @@ import CancelRounded from "@mui/icons-material/CancelRounded";
 import HelpOutlineRounded from "@mui/icons-material/HelpOutlineRounded";
 import ExpandMoreRounded from "@mui/icons-material/ExpandMoreRounded";
 import { api, timeAgo } from "@/lib/client";
-import { parsePrBody } from "@/lib/parse";
+import { checkPrOwner, parsePrBody } from "@/lib/parse";
 import LabelChip from "./label-chip";
 import LabelsDialog from "./labels-dialog";
 import FilesTab from "./files-tab";
@@ -265,7 +266,11 @@ export default function ReviewPanel({
         ? !ciFailing && !ciPending && !ciNeedsApproval && checks.checkRuns.length > 0
         : null;
 
-    const validOk = pr ? pr.mergeable !== false && !ciFailing && !ciNeedsApproval : null;
+    const ownerCheck = pr ? checkPrOwner(pr.author, files, pr.labels) : null;
+
+    const validOk = pr
+        ? pr.mergeable !== false && !ciFailing && !ciNeedsApproval && ownerCheck?.ok !== false
+        : null;
 
     const cardSx = { bgcolor: "surfaceContainerLow", borderRadius: "28px", p: 2.5 };
 
@@ -366,11 +371,39 @@ export default function ReviewPanel({
                                         <StatusPill label="Website preview" ok={previewOk} />
                                         {jsonReq && <StatusPill label="JSON valid" ok={jsonOk} />}
                                         <StatusPill
+                                            label={
+                                                ownerCheck?.bypassed
+                                                    ? "Owner check (bypassed)"
+                                                    : "Owner check"
+                                            }
+                                            ok={ownerCheck?.ok ?? null}
+                                        />
+                                        <StatusPill
                                             label={ciNeedsApproval ? "Checks (needs approval)" : "Checks"}
                                             ok={ciOk}
                                         />
                                         <StatusPill label="Valid" ok={validOk} />
                                     </Stack>
+
+                                    {ownerCheck && ownerCheck.mismatches.length > 0 && (
+                                        <Alert
+                                            severity={ownerCheck.bypassed ? "info" : "error"}
+                                            sx={{ mt: 2 }}
+                                        >
+                                            <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                                                {ownerCheck.bypassed
+                                                    ? "Owner check bypassed (ci bypass owner check)"
+                                                    : "Subdomain owner mismatch"}
+                                            </Typography>
+                                            <Stack spacing={0.25} sx={{ mt: 0.5 }}>
+                                                {ownerCheck.mismatches.map((m) => (
+                                                    <Typography key={m.filename} variant="body2">
+                                                        {m.reason}
+                                                    </Typography>
+                                                ))}
+                                            </Stack>
+                                        </Alert>
+                                    )}
                                 </Card>
 
                                 {/* Website + purpose card */}
@@ -561,6 +594,7 @@ export default function ReviewPanel({
                             <ActionBar
                                 pr={pr}
                                 checks={checks}
+                                ownerBlocked={ownerCheck?.ok === false}
                                 onApproved={() => onRefreshPr()}
                                 onMerged={(alreadyApproved) => onMerge(pr, alreadyApproved)}
                                 onClosed={(selectedLabels, comment) =>

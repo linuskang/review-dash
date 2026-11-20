@@ -75,3 +75,179 @@ export function parsePrBody(body: string | null | undefined): ParsedPrBody {
         purpose: section(body, "WEBSITE_PURPOSE"),
     };
 }
+
+export interface OwnerMismatch {
+    filename: string;
+    status: string;
+    baseOwner: string | null;
+    headOwner: string | null;
+    reason: string;
+}
+
+export interface OwnerCheckResult {
+    ok: boolean | null;
+    bypassed: boolean;
+    mismatches: OwnerMismatch[];
+    verifiedOwners: string[];
+}
+
+export function hasOwnerBypassLabel(labels: { name: string }[] | null | undefined): boolean {
+    if (!labels) return false;
+    return labels.some((l) => /bypass.*owner/i.test(l.name));
+}
+
+export function extractOwnerFromText(text: string | null | undefined): string | null {
+    if (!text) return null;
+    try {
+        const parsed = JSON.parse(text) as { owner?: { username?: unknown } };
+        if (typeof parsed?.owner?.username === "string" && parsed.owner.username.trim()) {
+            return parsed.owner.username.trim();
+        }
+    } catch {
+        // Diff hunk may be partial JSON; fall through to regex extraction.
+    }
+
+    const ownerBlock = text.match(/"owner"\s*:\s*\{[^}]*?"username"\s*:\s*"([^"]+)"/i);
+    if (ownerBlock?.[1]?.trim()) return ownerBlock[1].trim();
+
+    const usernameLine = text.match(/"username"\s*:\s*"([^"]+)"/i);
+    if (usernameLine?.[1]?.trim()) return usernameLine[1].trim();
+
+    return null;
+}
+
+export function extractOwnersFromPatch(patch: string | null | undefined): {
+    baseOwner: string | null;
+    headOwner: string | null;
+} {
+    if (!patch) return { baseOwner: null, headOwner: null };
+    const baseLines: string[] = [];
+    const headLines: string[] = [];
+    const removedLines: string[] = [];
+    const addedLines: string[] = [];
+
+    for (const line of patch.split("\n")) {
+        if (line.startsWith("@@") || line.startsWith("\\")) continue;
+        if (line.startsWith("-") && !line.startsWith("---")) {
+            const content = line.slice(1);
+            baseLines.push(content);
+            removedLines.push(content);
+        } else if (line.startsWith("+") && !line.startsWith("+++")) {
+            const content = line.slice(1);
+            headLines.push(content);
+            addedLines.push(content);
+        } else if (line.startsWith(" ")) {
+            const content = line.slice(1);
+            baseLines.push(content);
+            headLines.push(content);
+        }
+    }
+
+    const baseOwner =
+        extractOwnerFromText(baseLines.join("\n")) ??
+        extractOwnerFromText(removedLines.join("\n"));
+    const headOwner =
+        extractOwnerFromText(headLines.join("\n")) ??
+        extractOwnerFromText(addedLines.join("\n"));
+
+    return { baseOwner, headOwner };
+}
+
+export function checkPrOwner(
+    prAuthor: string,
+    files: {
+        filename: string;
+        status: string;
+        patch: string | null;
+        baseOwner?: string | null;
+    }[] | null,
+    labels: { name: string }[] | null | undefined,
+): OwnerCheckResult {
+    const bypassed = hasOwnerBypassLabel(labels);
+    if (!files) {
+        return { ok: bypassed ? true : null, bypassed, mismatches: [], verifiedOwners: [] };
+    }
+
+    const domainFiles = files.filter(
+        (f) => /^domains\/.*\.json$/i.test(f.filename) || f.filename.endsWith(".json"),
+    );
+    if (domainFiles.length === 0) {
+        return { ok: bypassed ? true : null, bypassed, mismatches: [], verifiedOwners: [] };
+    }
+
+    const authorLower = prAuthor.toLowerCase();
+    const mismatches: OwnerMismatch[] = [];
+    const verifiedOwners: string[] = [];
+
+    for (const f of domainFiles) {
+        const fromPatch = extractOwnersFromPatch(f.patch);
+        const baseOwner =
+            f.status === "added" ? null : (fromPatch.baseOwner ?? f.baseOwner ?? null);
+        const headOwner =
+            f.status === "removed"
+                ? null
+                : (fromPatch.headOwner ?? (f.status !== "added" ? baseOwner : null));
+
+        if (f.status !== "added") {
+            if (baseOwner && baseOwner.toLowerCase() !== authorLower) {
+                const changedTo =
+                    headOwner && headOwner.toLowerCase() !== baseOwner.toLowerCase()
+                        ? ` (changed to @${headOwner})`
+                        : "";
+                mismatches.push({
+                    filename: f.filename,
+                    status: f.status,
+                    baseOwner,
+                    headOwner,
+                    reason: `${f.filename} belongs to @${baseOwner}${changedTo}, not @${prAuthor}`,
+                });
+            } else if (headOwner && headOwner.toLowerCase() !== authorLower) {
+                mismatches.push({
+                    filename: f.filename,
+                    status: f.status,
+                    baseOwner,
+                    headOwner,
+                    reason: `${f.filename} sets owner to @${headOwner} instead of @${prAuthor}`,
+                });
+            } else if (!baseOwner && !headOwner) {
+                mismatches.push({
+                    filename: f.filename,
+                    status: f.status,
+                    baseOwner: null,
+                    headOwner: null,
+                    reason: `Could not verify owner in diff for ${f.filename}`,
+                });
+            } else {
+                const owner = baseOwner ?? headOwner;
+                if (owner && !verifiedOwners.includes(owner)) verifiedOwners.push(owner);
+            }
+        } else {
+            if (headOwner && headOwner.toLowerCase() !== authorLower) {
+                mismatches.push({
+                    filename: f.filename,
+                    status: f.status,
+                    baseOwner: null,
+                    headOwner,
+                    reason: `${f.filename} sets owner to @${headOwner} instead of @${prAuthor}`,
+                });
+            } else if (!headOwner) {
+                mismatches.push({
+                    filename: f.filename,
+                    status: f.status,
+                    baseOwner: null,
+                    headOwner: null,
+                    reason: `Missing owner.username in diff for ${f.filename}`,
+                });
+            } else if (!verifiedOwners.includes(headOwner)) {
+                verifiedOwners.push(headOwner);
+            }
+        }
+    }
+
+    return {
+        ok: bypassed ? true : mismatches.length === 0,
+        bypassed,
+        mismatches,
+        verifiedOwners,
+    };
+}

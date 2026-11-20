@@ -33,11 +33,13 @@ export interface PrDetail extends QueuePr {
 
 export interface PrFile {
     filename: string;
+    previousFilename?: string | null;
     status: string; // added | modified | removed | renamed
     additions: number;
     deletions: number;
     patch: string | null;
     rawUrl: string;
+    baseOwner?: string | null;
 }
 
 export interface PrComment {
