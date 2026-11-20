@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
     Avatar,
     Box,
+    Button,
     Chip,
     CircularProgress,
     IconButton,
@@ -15,8 +16,6 @@ import {
     Snackbar,
     Alert,
     Stack,
-    Tab,
-    Tabs,
     Tooltip,
     Typography,
 } from "@mui/material";
@@ -372,39 +371,52 @@ export default function Dashboard() {
                 }}
             >
                 <Wordmark height={34} />
-                <Tabs
-                    value={repo}
-                    onChange={(_e, val: RepoKey) => handleSwitchRepo(val)}
+                <Stack
+                    direction="row"
+                    spacing={0.5}
+                    role="tablist"
+                    aria-label="Repository switcher"
                     sx={{
-                        minHeight: 38,
-                        bgcolor: "surfaceContainerLow",
+                        bgcolor: "surfaceContainerHigh",
                         borderRadius: "999px",
                         p: 0.5,
-                        "& .MuiTabs-indicator": { display: "none" },
+                        border: "1px solid",
+                        borderColor: "outlineVariant",
                     }}
                 >
-                    {REPO_TABS.map((t) => (
-                        <Tooltip key={t.key} title={t.slug}>
-                            <Tab
-                                value={t.key}
-                                label={t.label}
-                                sx={{
-                                    minHeight: 32,
-                                    py: 0.5,
-                                    px: 2,
-                                    borderRadius: "999px",
-                                    fontWeight: 700,
-                                    fontSize: 13,
-                                    color: "text.secondary",
-                                    "&.Mui-selected": {
-                                        bgcolor: "secondaryContainer",
-                                        color: "onSecondaryContainer",
-                                    },
-                                }}
-                            />
-                        </Tooltip>
-                    ))}
-                </Tabs>
+                    {REPO_TABS.map((t) => {
+                        const active = repo === t.key;
+                        return (
+                            <Tooltip key={t.key} title={t.slug}>
+                                <Button
+                                    role="tab"
+                                    aria-selected={active}
+                                    size="small"
+                                    onClick={() => handleSwitchRepo(t.key)}
+                                    sx={{
+                                        minHeight: 32,
+                                        px: 2,
+                                        py: 0.5,
+                                        borderRadius: "999px",
+                                        fontWeight: 700,
+                                        fontSize: 13,
+                                        bgcolor: active ? "primary.main" : "transparent",
+                                        color: active ? "primary.contrastText" : "text.secondary",
+                                        boxShadow: active ? 2 : 0,
+                                        "&:hover": {
+                                            bgcolor: active
+                                                ? "primary.main"
+                                                : "surfaceContainerHighest",
+                                            color: active ? "primary.contrastText" : "text.primary",
+                                        },
+                                    }}
+                                >
+                                    {t.label}
+                                </Button>
+                            </Tooltip>
+                        );
+                    })}
+                </Stack>
                 <Box sx={{ flex: 1 }} />
                 <Tooltip title={mode === "dark" ? "Light mode" : "Dark mode"}>
                     <IconButton onClick={toggle}>
