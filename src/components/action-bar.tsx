@@ -45,7 +45,6 @@ export default function ActionBar({
     onMerged,
     onClosed,
     onSkipped,
-    onLabelsChanged,
     onRefreshPr,
     onRefreshChecks,
     notify,
@@ -53,10 +52,9 @@ export default function ActionBar({
     pr: PrDetail;
     checks: ChecksPayload | null;
     onApproved: () => void;
-    onMerged: () => void;
-    onClosed: () => void;
+    onMerged: (alreadyApproved: boolean) => void;
+    onClosed: (selectedLabels: string[], comment: string) => void;
     onSkipped?: () => void;
-    onLabelsChanged: (names: string[]) => void;
     onRefreshPr?: () => void;
     onRefreshChecks?: () => void;
     notify: Notify;
@@ -97,23 +95,10 @@ export default function ActionBar({
             onApproved();
         });
 
-    const merge = () =>
-        run("merge", async () => {
-            if (!approved) {
-                await api(`/api/pr/${pr.number}/review`, {
-                    method: "POST",
-                    body: JSON.stringify({ event: "APPROVE" }),
-                });
-                setApproved(true);
-            }
-            await api(`/api/pr/${pr.number}/merge`, {
-                method: "POST",
-                body: JSON.stringify({ method: "merge" }),
-            });
-            notify(`Merged #${pr.number}`);
-            setMergeOpen(false);
-            onMerged();
-        });
+    const merge = () => {
+        setMergeOpen(false);
+        onMerged(approved);
+    };
 
     const updateBranch = () =>
         run("update-branch", async () => {
@@ -489,28 +474,11 @@ export default function ActionBar({
                 open={closeOpen}
                 onClose={() => setCloseOpen(false)}
                 pr={pr}
-                busy={busy === "close"}
-                onConfirm={(selectedLabels, comment) =>
-                    run("close", async () => {
-                        const before = new Set((pr.labels || []).map((l) => l.name));
-                        const toAdd = selectedLabels.filter((n) => !before.has(n));
-                        const toRemove = [...before].filter((n) => !selectedLabels.includes(n));
-                        if (toAdd.length > 0 || toRemove.length > 0) {
-                            await api(`/api/pr/${pr.number}/labels`, {
-                                method: "POST",
-                                body: JSON.stringify({ add: toAdd, remove: toRemove }),
-                            });
-                            onLabelsChanged(selectedLabels);
-                        }
-                        await api(`/api/pr/${pr.number}/close`, {
-                            method: "POST",
-                            body: JSON.stringify({ comment: comment || undefined }),
-                        });
-                        notify(`Closed #${pr.number}`);
-                        setCloseOpen(false);
-                        onClosed();
-                    })
-                }
+                busy={false}
+                onConfirm={(selectedLabels, comment) => {
+                    setCloseOpen(false);
+                    onClosed(selectedLabels, comment);
+                }}
             />
         </>
     );

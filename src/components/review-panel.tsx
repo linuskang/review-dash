@@ -130,7 +130,8 @@ export default function ReviewPanel({
     pr,
     onRefreshPr,
     onSyncQueue,
-    onAdvanced,
+    onMerge,
+    onClosePr,
     onSkip,
     notify,
 }: {
@@ -138,7 +139,8 @@ export default function ReviewPanel({
     pr: PrDetail | null;
     onRefreshPr: () => void;
     onSyncQueue?: (patch: Partial<QueuePr>) => void;
-    onAdvanced: (action: "merged" | "closed") => void;
+    onMerge: (pr: PrDetail, alreadyApproved: boolean) => void;
+    onClosePr: (pr: PrDetail, selectedLabels: string[], comment: string) => void;
     onSkip?: () => void;
     notify: Notify;
 }) {
@@ -560,10 +562,11 @@ export default function ReviewPanel({
                                 pr={pr}
                                 checks={checks}
                                 onApproved={() => onRefreshPr()}
-                                onMerged={() => onAdvanced("merged")}
-                                onClosed={() => onClosedAdvance()}
+                                onMerged={(alreadyApproved) => onMerge(pr, alreadyApproved)}
+                                onClosed={(selectedLabels, comment) =>
+                                    onClosePr(pr, selectedLabels, comment)
+                                }
                                 onSkipped={() => onSkip?.()}
-                                onLabelsChanged={() => onRefreshPr()}
                                 onRefreshPr={onRefreshPr}
                                 onRefreshChecks={loadChecks}
                                 notify={notify}
@@ -582,8 +585,4 @@ export default function ReviewPanel({
             </motion.div>
         </AnimatePresence>
     );
-
-    function onClosedAdvance() {
-        onAdvanced("closed");
-    }
 }

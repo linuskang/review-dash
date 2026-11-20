@@ -1,12 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import {
     Avatar,
     Box,
+    Chip,
+    CircularProgress,
     IconButton,
+    Link,
     Menu,
     MenuItem,
+    Paper,
     Snackbar,
     Alert,
     Stack,
@@ -16,6 +21,10 @@ import {
 import DarkModeRounded from "@mui/icons-material/DarkModeRounded";
 import LightModeRounded from "@mui/icons-material/LightModeRounded";
 import LogoutRounded from "@mui/icons-material/LogoutRounded";
+import MergeRounded from "@mui/icons-material/Merge";
+import CheckCircleRounded from "@mui/icons-material/CheckCircleRounded";
+import CancelRounded from "@mui/icons-material/CancelRounded";
+import CloseRounded from "@mui/icons-material/CloseRounded";
 import PrQueue from "./pr-queue";
 import ReviewPanel from "./review-panel";
 import PreviewColumn from "./preview-column";
@@ -30,6 +39,15 @@ interface Me {
     avatarUrl: string;
 }
 
+interface ActionQueueItem {
+    number: number;
+    title: string;
+    htmlUrl: string;
+    action: "merge" | "close";
+    status: "queued" | "running" | "succeeded" | "failed";
+    error?: string;
+}
+
 export default function Dashboard() {
     const { mode, toggle } = useColorMode();
     const [me, setMe] = useState<Me | null>(null);
@@ -41,6 +59,27 @@ export default function Dashboard() {
     const [toast, setToast] = useState<{ message: string; severity: "success" | "error" | "info" } | null>(
         null,
     );
+    const [actionQueue, setActionQueue] = useState<ActionQueueItem[]>([]);
+    const inFlightSetRef = useRef<Set<number>>(new Set());
+    const actionChainRef = useRef<Promise<void>>(Promise.resolve());
+    const dismissTimersRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+
+    useEffect(() => {
+        const timers = dismissTimersRef.current;
+        return () => {
+            timers.forEach((timer) => clearTimeout(timer));
+            timers.clear();
+        };
+    }, []);
+
+    const dismissQueueItem = useCallback((prNumber: number) => {
+        const timer = dismissTimersRef.current.get(prNumber);
+        if (timer) {
+            clearTimeout(timer);
+            dismissTimersRef.current.delete(prNumber);
+        }
+        setActionQueue((prev) => prev.filter((item) => item.number !== prNumber));
+    }, []);
 
     const notify = useCallback(
         (message: string, severity: "success" | "error" | "info" = "success") =>
@@ -56,10 +95,11 @@ export default function Dashboard() {
         if (!silent) setLoading(true);
         try {
             const list = await api<QueuePr[]>("/api/prs");
-            setPrs(list);
+            const visible = list.filter((p) => !inFlightSetRef.current.has(p.number));
+            setPrs(visible);
             setSelected((sel) => {
-                if (sel && list.some((p) => p.number === sel)) return sel;
-                return list.length ? list[0].number : null; // oldest open PR
+                if (sel && visible.some((p) => p.number === sel)) return sel;
+                return visible.length ? visible[0].number : null; // oldest open PR
             });
         } catch (e) {
             notify(e instanceof Error ? e.message : "Failed to load queue", "error");
@@ -110,17 +150,138 @@ export default function Dashboard() {
         loadQueue();
     }, [loadQueue]);
 
-    /** After merging/closing: drop it from the queue and jump to the next newest PR. */
-    const handleAdvanced = useCallback(
-        (action: "merged" | "closed") => {
-            const idx = prs.findIndex((p) => p.number === selected);
-            const next = prs.filter((p) => p.number !== selected);
+    /** Enqueue a background PR action (merge or close) and advance immediately without waiting for GitHub. */
+    const enqueuePrAction = useCallback(
+        (pr: PrDetail, action: "merge" | "close", task: () => Promise<void>) => {
+            if (inFlightSetRef.current.has(pr.number)) return;
+            inFlightSetRef.current.add(pr.number);
+
+            const snapshot: QueuePr = prs.find((p) => p.number === pr.number) ?? {
+                number: pr.number,
+                title: pr.title,
+                author: pr.author,
+                avatarUrl: pr.avatarUrl,
+                authorAssociation: pr.authorAssociation,
+                createdAt: pr.createdAt,
+                draft: pr.draft,
+                labels: pr.labels,
+                commentsCount: pr.commentsCount,
+                checks: pr.checks,
+            };
+
+            // Advance immediately so the user does not wait for the GitHub API.
+            const idx = prs.findIndex((p) => p.number === pr.number);
+            const next = prs.filter((p) => p.number !== pr.number);
             const target = next[idx] ?? next[idx - 1] ?? next[0] ?? null;
-            setPrs(next);
-            setSelected(target ? target.number : null);
-            if (action === "closed") notify("Moving to next PR", "info");
+            setPrs((prev) => prev.filter((p) => p.number !== pr.number));
+            setSelected((curSel) => (curSel === pr.number ? (target ? target.number : null) : curSel));
+
+            const existingTimer = dismissTimersRef.current.get(pr.number);
+            if (existingTimer) {
+                clearTimeout(existingTimer);
+                dismissTimersRef.current.delete(pr.number);
+            }
+
+            setActionQueue((prev) => [
+                ...prev.filter((item) => item.number !== pr.number),
+                {
+                    number: pr.number,
+                    title: pr.title,
+                    htmlUrl: pr.htmlUrl,
+                    action,
+                    status: "queued",
+                },
+            ]);
+
+            actionChainRef.current = actionChainRef.current.then(async () => {
+                setActionQueue((prev) =>
+                    prev.map((item) =>
+                        item.number === pr.number
+                            ? { ...item, status: "running", error: undefined }
+                            : item,
+                    ),
+                );
+                try {
+                    await task();
+                    inFlightSetRef.current.delete(pr.number);
+                    setActionQueue((prev) =>
+                        prev.map((item) =>
+                            item.number === pr.number ? { ...item, status: "succeeded" } : item,
+                        ),
+                    );
+                    const timer = setTimeout(() => {
+                        dismissTimersRef.current.delete(pr.number);
+                        setActionQueue((prev) =>
+                            prev.filter(
+                                (item) =>
+                                    !(item.number === pr.number && item.status === "succeeded"),
+                            ),
+                        );
+                    }, 5000);
+                    dismissTimersRef.current.set(pr.number, timer);
+                } catch (e) {
+                    inFlightSetRef.current.delete(pr.number);
+                    const errorMessage =
+                        e instanceof Error
+                            ? e.message
+                            : action === "merge"
+                              ? "Failed to merge"
+                              : "Failed to close";
+                    setActionQueue((prev) =>
+                        prev.map((item) =>
+                            item.number === pr.number
+                                ? { ...item, status: "failed", error: errorMessage }
+                                : item,
+                        ),
+                    );
+                    setPrs((prev) => {
+                        if (prev.some((p) => p.number === pr.number)) return prev;
+                        return [...prev, snapshot].sort((a, b) => a.number - b.number);
+                    });
+                    setSelected((curSel) => (curSel === null ? pr.number : curSel));
+                }
+            });
         },
-        [prs, selected, notify],
+        [prs],
+    );
+
+    const handleMergePr = useCallback(
+        (pr: PrDetail, alreadyApproved: boolean) => {
+            enqueuePrAction(pr, "merge", async () => {
+                if (!alreadyApproved) {
+                    await api(`/api/pr/${pr.number}/review`, {
+                        method: "POST",
+                        body: JSON.stringify({ event: "APPROVE" }),
+                    });
+                }
+                await api(`/api/pr/${pr.number}/merge`, {
+                    method: "POST",
+                    body: JSON.stringify({ method: "merge" }),
+                });
+            });
+        },
+        [enqueuePrAction],
+    );
+
+    const handleClosePr = useCallback(
+        (pr: PrDetail, selectedLabels: string[], comment: string) => {
+            enqueuePrAction(pr, "close", async () => {
+                const before = new Set((pr.labels || []).map((l) => l.name));
+                const toAdd = selectedLabels.filter((n) => !before.has(n));
+                const toRemove = [...before].filter((n) => !selectedLabels.includes(n));
+                if (toAdd.length > 0 || toRemove.length > 0) {
+                    await api(`/api/pr/${pr.number}/labels`, {
+                        method: "POST",
+                        body: JSON.stringify({ add: toAdd, remove: toRemove }),
+                    });
+                }
+                await api(`/api/pr/${pr.number}/close`, {
+                    method: "POST",
+                    body: JSON.stringify({ comment: comment || undefined }),
+                });
+            });
+        },
+        [enqueuePrAction],
     );
 
     const handleSkip = useCallback(() => {
@@ -128,6 +289,22 @@ export default function Dashboard() {
         const idx = prs.findIndex((p) => p.number === selected);
         setSelected(prs[(idx + 1) % prs.length].number);
     }, [prs, selected]);
+
+    const activeItems = actionQueue.filter(
+        (item) => item.status === "queued" || item.status === "running",
+    );
+    const activeCount = activeItems.length;
+    const failedCount = actionQueue.filter((item) => item.status === "failed").length;
+    const hasMerge = actionQueue.some((item) => item.action === "merge");
+    const hasClose = actionQueue.some((item) => item.action === "close");
+    const queueHeading =
+        hasMerge && !hasClose ? "Merge queue" : hasClose && !hasMerge ? "Close queue" : "PR queue";
+    const activeLabel =
+        hasMerge && !hasClose
+            ? `${activeCount} merging`
+            : hasClose && !hasMerge
+              ? `${activeCount} closing`
+              : `${activeCount} active`;
 
     return (
         <Box sx={{ height: "100vh", display: "flex", flexDirection: "column", p: 1, gap: 1 }}>
@@ -198,10 +375,11 @@ export default function Dashboard() {
                     ) : (
                         <ReviewPanel
                             prNumber={selected}
-                            pr={prDetail}
+                            pr={prDetail && prDetail.number === selected ? prDetail : null}
                             onRefreshPr={() => selected && loadPrDetail(selected)}
                             onSyncQueue={(patch) => selected && handleQueuePatch(selected, patch)}
-                            onAdvanced={handleAdvanced}
+                            onMerge={handleMergePr}
+                            onClosePr={handleClosePr}
                             onSkip={handleSkip}
                             notify={notify}
                         />
@@ -209,10 +387,248 @@ export default function Dashboard() {
                 </Box>
                 {selected !== null && (
                     <Box sx={{ display: { xs: "none", md: "flex" }, flex: "2.5 1 0", minWidth: 0 }}>
-                        <PreviewColumn pr={prDetail} />
+                        <PreviewColumn pr={prDetail && prDetail.number === selected ? prDetail : null} />
                     </Box>
                 )}
             </Stack>
+
+            {/* Top-right background merge/close queue notifications */}
+            <Box
+                sx={{
+                    position: "fixed",
+                    top: 16,
+                    right: 16,
+                    zIndex: 1400,
+                    width: 340,
+                    maxWidth: "calc(100vw - 32px)",
+                    pointerEvents: "none",
+                }}
+            >
+                <AnimatePresence>
+                    {actionQueue.length > 0 && (
+                        <motion.div
+                            key="action-queue-panel"
+                            initial={{ opacity: 0, y: -12, scale: 0.96 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, y: -12, scale: 0.96 }}
+                            transition={{ type: "spring", stiffness: 400, damping: 32 }}
+                            style={{ pointerEvents: "auto" }}
+                        >
+                            <Paper
+                                elevation={6}
+                                sx={{
+                                    p: 1.5,
+                                    borderRadius: "20px",
+                                    bgcolor: "surfaceContainerHigh",
+                                    border: "1px solid",
+                                    borderColor: "outlineVariant",
+                                    backdropFilter: "blur(12px)",
+                                }}
+                            >
+                                <Stack
+                                    direction="row"
+                                    spacing={1}
+                                    sx={{ alignItems: "center", px: 0.5, mb: 1 }}
+                                >
+                                    {activeCount > 0 ? (
+                                        <CircularProgress size={15} thickness={5} />
+                                    ) : (
+                                        <MergeRounded sx={{ fontSize: 18, color: "text.secondary" }} />
+                                    )}
+                                    <Typography
+                                        variant="subtitle2"
+                                        sx={{ flex: 1, fontWeight: 700, lineHeight: 1.2 }}
+                                    >
+                                        {queueHeading}
+                                    </Typography>
+                                    <Chip
+                                        size="small"
+                                        label={
+                                            activeCount > 0
+                                                ? activeLabel
+                                                : failedCount > 0
+                                                  ? `${failedCount} failed`
+                                                  : "Done"
+                                        }
+                                        sx={{
+                                            height: 20,
+                                            fontSize: 11,
+                                            fontWeight: 700,
+                                            bgcolor:
+                                                failedCount > 0
+                                                    ? "errorContainer"
+                                                    : activeCount > 0
+                                                      ? "secondaryContainer"
+                                                      : "successContainer",
+                                            color:
+                                                failedCount > 0
+                                                    ? "onErrorContainer"
+                                                    : activeCount > 0
+                                                      ? "onSecondaryContainer"
+                                                      : "onSuccessContainer",
+                                        }}
+                                    />
+                                </Stack>
+
+                                <Stack spacing={0.75} sx={{ maxHeight: 320, overflowY: "auto" }}>
+                                    <AnimatePresence initial={false}>
+                                        {actionQueue.map((item) => {
+                                            const isFailed = item.status === "failed";
+                                            const isSucceeded = item.status === "succeeded";
+                                            const isRunning = item.status === "running";
+                                            const isMerge = item.action === "merge";
+                                            return (
+                                                <motion.div
+                                                    key={item.number}
+                                                    layout
+                                                    initial={{ opacity: 0, y: -6, scale: 0.97 }}
+                                                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                                                    exit={{ opacity: 0, scale: 0.95 }}
+                                                    transition={{
+                                                        type: "spring",
+                                                        stiffness: 420,
+                                                        damping: 34,
+                                                    }}
+                                                >
+                                                    <Stack
+                                                        direction="row"
+                                                        spacing={1.25}
+                                                        sx={{
+                                                            alignItems: "center",
+                                                            px: 1.25,
+                                                            py: 1,
+                                                            borderRadius: "14px",
+                                                            bgcolor: isFailed
+                                                                ? "errorContainer"
+                                                                : isSucceeded
+                                                                  ? "successContainer"
+                                                                  : "surfaceContainerHighest",
+                                                            color: isFailed
+                                                                ? "onErrorContainer"
+                                                                : isSucceeded
+                                                                  ? "onSuccessContainer"
+                                                                  : "text.primary",
+                                                        }}
+                                                    >
+                                                        {isFailed ? (
+                                                            <CancelRounded
+                                                                sx={{
+                                                                    fontSize: 18,
+                                                                    color: "error.main",
+                                                                    flexShrink: 0,
+                                                                }}
+                                                            />
+                                                        ) : isSucceeded ? (
+                                                            <CheckCircleRounded
+                                                                sx={{
+                                                                    fontSize: 18,
+                                                                    color: "success.main",
+                                                                    flexShrink: 0,
+                                                                }}
+                                                            />
+                                                        ) : (
+                                                            <CircularProgress
+                                                                size={16}
+                                                                thickness={5}
+                                                                color="inherit"
+                                                                sx={{ flexShrink: 0 }}
+                                                            />
+                                                        )}
+
+                                                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                                                            <Typography
+                                                                variant="body2"
+                                                                sx={{
+                                                                    fontWeight: 600,
+                                                                    lineHeight: 1.25,
+                                                                }}
+                                                            >
+                                                                {isFailed ? (
+                                                                    <>
+                                                                        Failed to{" "}
+                                                                        {isMerge ? "merge" : "close"}{" "}
+                                                                        <Link
+                                                                            href={item.htmlUrl}
+                                                                            target="_blank"
+                                                                            rel="noopener noreferrer"
+                                                                            underline="always"
+                                                                            sx={{
+                                                                                fontWeight: 800,
+                                                                                color: "inherit",
+                                                                            }}
+                                                                        >
+                                                                            #{item.number}
+                                                                        </Link>
+                                                                    </>
+                                                                ) : isSucceeded ? (
+                                                                    <>
+                                                                        {isMerge ? "Merged" : "Closed"} #
+                                                                        {item.number}
+                                                                    </>
+                                                                ) : isRunning ? (
+                                                                    <>
+                                                                        {isMerge
+                                                                            ? "Merging"
+                                                                            : "Closing"}{" "}
+                                                                        #{item.number}…
+                                                                    </>
+                                                                ) : (
+                                                                    <>
+                                                                        Queued{" "}
+                                                                        {isMerge ? "merge" : "close"} #
+                                                                        {item.number}
+                                                                    </>
+                                                                )}
+                                                            </Typography>
+                                                            <Typography
+                                                                variant="caption"
+                                                                noWrap
+                                                                title={
+                                                                    isFailed && item.error
+                                                                        ? item.error
+                                                                        : item.title
+                                                                }
+                                                                sx={{
+                                                                    display: "block",
+                                                                    opacity: 0.85,
+                                                                    overflow: "hidden",
+                                                                    textOverflow: "ellipsis",
+                                                                }}
+                                                            >
+                                                                {isFailed && item.error
+                                                                    ? item.error
+                                                                    : item.title}
+                                                            </Typography>
+                                                        </Box>
+
+                                                        {(isFailed || isSucceeded) && (
+                                                            <Tooltip title="Dismiss">
+                                                                <IconButton
+                                                                    size="small"
+                                                                    onClick={() =>
+                                                                        dismissQueueItem(item.number)
+                                                                    }
+                                                                    sx={{
+                                                                        color: "inherit",
+                                                                        p: 0.4,
+                                                                        flexShrink: 0,
+                                                                    }}
+                                                                >
+                                                                    <CloseRounded sx={{ fontSize: 16 }} />
+                                                                </IconButton>
+                                                            </Tooltip>
+                                                        )}
+                                                    </Stack>
+                                                </motion.div>
+                                            );
+                                        })}
+                                    </AnimatePresence>
+                                </Stack>
+                            </Paper>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+            </Box>
 
             <Snackbar
                 open={Boolean(toast)}
