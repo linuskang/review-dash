@@ -1,9 +1,9 @@
 import { withAuth, pass } from "@/lib/api";
-import { gh, ghPaginate, REPO } from "@/lib/github";
+import { gh, ghPaginate } from "@/lib/github";
 import { extractOwnerFromText, extractOwnersFromPatch } from "@/lib/parse";
 
-export const GET = withAuth(async (_req, { session, params }) => {
-    const files = await ghPaginate(session.token, `/repos/${REPO}/pulls/${params.n}/files`, 3);
+export const GET = withAuth(async (_req, { session, params, repo }) => {
+    const files = await ghPaginate(session.token, `/repos/${repo}/pulls/${params.n}/files`, 3);
     const slim = (files as Record<string, unknown>[]).map((f) => ({
         filename: String(f.filename ?? ""),
         previousFilename: typeof f.previous_filename === "string" ? f.previous_filename : null,
@@ -35,7 +35,7 @@ export const GET = withAuth(async (_req, { session, params }) => {
                     .join("/");
                 const res = await gh<{ content?: string; encoding?: string }>(
                     session.token,
-                    `/repos/${REPO}/contents/${lookupPath}`,
+                    `/repos/${repo}/contents/${lookupPath}`,
                 );
                 if (res.ok && res.data?.content && res.data.encoding === "base64") {
                     const decoded = Buffer.from(res.data.content, "base64").toString("utf8");

@@ -1,8 +1,8 @@
 import { withAuth, pass } from "@/lib/api";
-import { ghPaginate, REPO } from "@/lib/github";
+import { ghPaginate } from "@/lib/github";
 
-export const GET = withAuth(async (_req, { session }) => {
-    const labels = await ghPaginate(session.token, `/repos/${REPO}/labels`, 2);
+export const GET = withAuth(async (_req, { session, repo }) => {
+    const labels = await ghPaginate(session.token, `/repos/${repo}/labels`, 2);
     const slim = (labels as { name: string; color: string; description: string | null }[]).map(
         (l) => ({ name: l.name, color: l.color, description: l.description }),
     );

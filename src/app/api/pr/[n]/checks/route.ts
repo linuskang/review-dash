@@ -1,5 +1,5 @@
 import { withAuth, pass } from "@/lib/api";
-import { gh, REPO } from "@/lib/github";
+import { gh } from "@/lib/github";
 
 /**
  * Combined view of CI for a PR:
@@ -7,14 +7,14 @@ import { gh, REPO } from "@/lib/github";
  *  - workflow runs for the head SHA — including ones in "waiting"/"action_required"
  *    that need a maintainer to approve them (first-time contributor button).
  */
-export const GET = withAuth(async (_req, { session, params }) => {
-    const pr = await gh(session.token, `/repos/${REPO}/pulls/${params.n}`);
+export const GET = withAuth(async (_req, { session, params, repo }) => {
+    const pr = await gh(session.token, `/repos/${repo}/pulls/${params.n}`);
     if (!pr.ok) return pass(pr);
     const headSha = (pr.data as { head: { sha: string } }).head.sha;
 
     const [checkRunsRes, runsRes] = await Promise.all([
-        gh(session.token, `/repos/${REPO}/commits/${headSha}/check-runs?per_page=100`),
-        gh(session.token, `/repos/${REPO}/actions/runs?head_sha=${headSha}&per_page=50`),
+        gh(session.token, `/repos/${repo}/commits/${headSha}/check-runs?per_page=100`),
+        gh(session.token, `/repos/${repo}/actions/runs?head_sha=${headSha}&per_page=50`),
     ]);
 
     const rawCheckRuns = checkRunsRes.ok

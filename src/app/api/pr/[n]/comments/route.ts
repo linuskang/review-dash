@@ -1,5 +1,5 @@
 import { withAuth, pass, readJson } from "@/lib/api";
-import { gh, ghPaginate, REPO } from "@/lib/github";
+import { gh, ghPaginate } from "@/lib/github";
 
 interface GhComment {
     id: number;
@@ -10,8 +10,8 @@ interface GhComment {
     author_association: string;
 }
 
-export const GET = withAuth(async (_req, { session, params }) => {
-    const comments = await ghPaginate<GhComment>(session.token, `/repos/${REPO}/issues/${params.n}/comments`, 2);
+export const GET = withAuth(async (_req, { session, params, repo }) => {
+    const comments = await ghPaginate<GhComment>(session.token, `/repos/${repo}/issues/${params.n}/comments`, 2);
     const slim = comments.map((c) => ({
         id: c.id,
         author: c.user?.login,
@@ -25,12 +25,12 @@ export const GET = withAuth(async (_req, { session, params }) => {
     return pass({ status: 200, data: slim });
 });
 
-export const POST = withAuth(async (req, { session, params }) => {
+export const POST = withAuth(async (req, { session, params, repo }) => {
     const { body } = await readJson(req);
     if (typeof body !== "string" || !body.trim()) {
         return Response.json({ error: "body_required" }, { status: 400 });
     }
-    const res = await gh(session.token, `/repos/${REPO}/issues/${params.n}/comments`, {
+    const res = await gh(session.token, `/repos/${repo}/issues/${params.n}/comments`, {
         method: "POST",
         body: JSON.stringify({ body }),
     });

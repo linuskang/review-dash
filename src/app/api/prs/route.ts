@@ -1,5 +1,5 @@
 import { withAuth, pass } from "@/lib/api";
-import { gh, ghPaginate, REPO } from "@/lib/github";
+import { gh, ghPaginate } from "@/lib/github";
 import type { QueuePr } from "@/lib/types";
 
 interface GhPull {
@@ -25,10 +25,10 @@ const PASSING = new Set(["success", "neutral", "skipped"]);
 /** Name of the CI check that only appears once a maintainer has approved/queued the workflow. */
 const REQUIRED_CHECK = "Tests";
 
-async function summarizeChecks(token: string, sha: string): Promise<QueuePr["checks"]> {
+async function summarizeChecks(token: string, repo: string, sha: string): Promise<QueuePr["checks"]> {
     const res = await gh<{ check_runs?: GhCheckRun[] }>(
         token,
-        `/repos/${REPO}/commits/${encodeURIComponent(sha)}/check-runs?per_page=100`,
+        `/repos/${repo}/commits/${encodeURIComponent(sha)}/check-runs?per_page=100`,
     );
     if (!res.ok) return undefined;
 
@@ -52,11 +52,11 @@ async function summarizeChecks(token: string, sha: string): Promise<QueuePr["che
 }
 
 /** Open PRs, oldest first, with CI and comment summaries. */
-export const GET = withAuth(async (_req, { session }) => {
+export const GET = withAuth(async (_req, { session, repo }) => {
     const [prs, issues] = await Promise.all([
-        ghPaginate<GhPull>(session.token, `/repos/${REPO}/pulls?state=open&sort=created&direction=asc`, 3),
+        ghPaginate<GhPull>(session.token, `/repos/${repo}/pulls?state=open&sort=created&direction=asc`, 3),
         // The issues endpoint includes PRs along with their comment counts, saving a request per PR.
-        ghPaginate<{ number: number; comments: number }>(session.token, `/repos/${REPO}/issues?state=open`, 5),
+        ghPaginate<{ number: number; comments: number }>(session.token, `/repos/${repo}/issues?state=open`, 5),
     ]);
     const commentCounts = new Map(issues.map((i) => [i.number, i.comments]));
 
@@ -71,7 +71,7 @@ export const GET = withAuth(async (_req, { session }) => {
             draft: pr.draft,
             labels: (pr.labels ?? []).map((l) => ({ name: l.name, color: l.color })),
             commentsCount: commentCounts.get(pr.number) ?? 0,
-            checks: await summarizeChecks(session.token, pr.head.sha).catch(() => undefined),
+            checks: await summarizeChecks(session.token, repo, pr.head.sha).catch(() => undefined),
         })),
     );
     return pass({ status: 200, data: queue });

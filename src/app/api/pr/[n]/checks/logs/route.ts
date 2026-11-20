@@ -1,5 +1,5 @@
 import { isPositiveInt, withAuth, pass } from "@/lib/api";
-import { gh, REPO } from "@/lib/github";
+import { gh } from "@/lib/github";
 
 const MAX_LOG_CHARS = 12000;
 
@@ -26,13 +26,13 @@ function extractRelevantLines(raw: string): string {
 }
 
 /** GET ?runId= → logs for the failed jobs of that workflow run. */
-export const GET = withAuth(async (req, { session }) => {
+export const GET = withAuth(async (req, { session, repo }) => {
     const runId = new URL(req.url).searchParams.get("runId");
     if (!isPositiveInt(runId)) return Response.json({ error: "invalid_run_id" }, { status: 400 });
 
     const jobsRes = await gh(
         session.token,
-        `/repos/${REPO}/actions/runs/${runId}/jobs?filter=latest&per_page=100`,
+        `/repos/${repo}/actions/runs/${runId}/jobs?filter=latest&per_page=100`,
     );
     if (!jobsRes.ok) return pass(jobsRes);
 
@@ -41,7 +41,7 @@ export const GET = withAuth(async (req, { session }) => {
 
     const results = await Promise.all(
         failed.map(async (job) => {
-            const logsRes = await gh<string>(session.token, `/repos/${REPO}/actions/jobs/${job.id}/logs`);
+            const logsRes = await gh<string>(session.token, `/repos/${repo}/actions/jobs/${job.id}/logs`);
             return {
                 name: job.name as string,
                 htmlUrl: job.html_url as string,

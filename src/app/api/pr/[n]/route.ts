@@ -1,5 +1,5 @@
 import { withAuth, pass } from "@/lib/api";
-import { gh, REPO } from "@/lib/github";
+import { gh } from "@/lib/github";
 import type { PrDetail } from "@/lib/types";
 
 interface GhPullDetail {
@@ -23,8 +23,8 @@ interface GhPullDetail {
     changed_files: number;
 }
 
-export const GET = withAuth(async (_req, { session, params }) => {
-    const res = await gh<GhPullDetail>(session.token, `/repos/${REPO}/pulls/${params.n}`);
+export const GET = withAuth(async (_req, { session, params, repo }) => {
+    const res = await gh<GhPullDetail>(session.token, `/repos/${repo}/pulls/${params.n}`);
     if (!res.ok) return pass(res);
     const pr = res.data;
     const detail: PrDetail = {

@@ -1,9 +1,30 @@
 "use client";
 
-export async function api<T = unknown>(path: string, init?: RequestInit): Promise<T> {
+export type RepoKey = "is-a.dev" | "is-a.bot";
+
+let activeRepo: RepoKey = "is-a.dev";
+
+export function getActiveRepo(): RepoKey {
+    return activeRepo;
+}
+
+export function setActiveRepo(repo: RepoKey): void {
+    activeRepo = repo;
+}
+
+export async function api<T = unknown>(
+    path: string,
+    init?: RequestInit & { repo?: RepoKey },
+): Promise<T> {
+    const targetRepo = init?.repo ?? activeRepo;
+    const headers = new Headers(init?.headers);
+    headers.set("X-Target-Repo", targetRepo);
+    if (init?.body && !headers.has("Content-Type")) {
+        headers.set("Content-Type", "application/json");
+    }
     const res = await fetch(path, {
         ...init,
-        headers: init?.body ? { "Content-Type": "application/json" } : undefined,
+        headers,
     });
     if (res.status === 401) {
         window.location.href = "/login?error=expired";

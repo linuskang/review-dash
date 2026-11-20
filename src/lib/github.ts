@@ -1,7 +1,27 @@
-/** Target repository. Override with REPO_OWNER / REPO_NAME to review a fork. */
+/** Target repositories. Override is-a.dev with REPO_OWNER / REPO_NAME to review a fork. */
 export const REPO_OWNER = process.env.REPO_OWNER || "is-a-dev";
 export const REPO_NAME = process.env.REPO_NAME || "register";
 export const REPO = `${encodeURIComponent(REPO_OWNER)}/${encodeURIComponent(REPO_NAME)}`;
+
+export const BOT_REPO_OWNER = process.env.BOT_REPO_OWNER || "free-domains";
+export const BOT_REPO_NAME = process.env.BOT_REPO_NAME || "is-a.bot";
+export const BOT_REPO = `${encodeURIComponent(BOT_REPO_OWNER)}/${encodeURIComponent(BOT_REPO_NAME)}`;
+
+export type RepoKey = "is-a.dev" | "is-a.bot";
+
+export const REPOS: Record<RepoKey, string> = {
+    "is-a.dev": REPO,
+    "is-a.bot": BOT_REPO,
+};
+
+export function resolveRepo(req: Request): string {
+    const raw =
+        req.headers.get("x-target-repo") ?? new URL(req.url).searchParams.get("repo") ?? "is-a.dev";
+    if (raw === "is-a.bot" || raw === "free-domains/is-a.bot") {
+        return REPOS["is-a.bot"];
+    }
+    return REPOS["is-a.dev"];
+}
 
 const GITHUB_API = "https://api.github.com";
 const REQUEST_TIMEOUT_MS = 20_000;
@@ -52,10 +72,15 @@ export async function ghPaginate<T = unknown>(token: string, path: string, maxPa
     return out;
 }
 
-/** Check whether the user has maintainer-level (push) access to the target repo. */
+/** Check whether the user has maintainer-level (push) access to any target repo. */
 export async function hasRepoAccess(token: string): Promise<boolean> {
-    const res = await gh<{ permissions?: Record<string, boolean> }>(token, `/repos/${REPO}`);
-    if (!res.ok) return false;
-    const perms = res.data.permissions;
-    return Boolean(perms && (perms.admin || perms.maintain || perms.push));
+    const checks = await Promise.all(
+        Object.values(REPOS).map(async (repo) => {
+            const res = await gh<{ permissions?: Record<string, boolean> }>(token, `/repos/${repo}`);
+            if (!res.ok) return false;
+            const perms = res.data.permissions;
+            return Boolean(perms && (perms.admin || perms.maintain || perms.push));
+        }),
+    );
+    return checks.some(Boolean);
 }

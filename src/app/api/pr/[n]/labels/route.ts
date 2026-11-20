@@ -1,5 +1,5 @@
 import { HttpError, withAuth, pass, readJson } from "@/lib/api";
-import { gh, REPO } from "@/lib/github";
+import { gh } from "@/lib/github";
 
 function stringList(value: unknown, field: string): string[] {
     if (value === undefined) return [];
@@ -10,13 +10,13 @@ function stringList(value: unknown, field: string): string[] {
 }
 
 /** Add and/or remove labels. Body: { add?: string[], remove?: string[] }. Returns the current labels. */
-export const POST = withAuth(async (req, { session, params }) => {
+export const POST = withAuth(async (req, { session, params, repo }) => {
     const body = await readJson(req);
     const add = stringList(body.add, "add");
     const remove = stringList(body.remove, "remove");
 
     if (add.length) {
-        const res = await gh(session.token, `/repos/${REPO}/issues/${params.n}/labels`, {
+        const res = await gh(session.token, `/repos/${repo}/issues/${params.n}/labels`, {
             method: "POST",
             body: JSON.stringify({ labels: add }),
         });
@@ -24,7 +24,7 @@ export const POST = withAuth(async (req, { session, params }) => {
     }
     await Promise.all(
         remove.map((name) =>
-            gh(session.token, `/repos/${REPO}/issues/${params.n}/labels/${encodeURIComponent(name)}`, {
+            gh(session.token, `/repos/${repo}/issues/${params.n}/labels/${encodeURIComponent(name)}`, {
                 method: "DELETE",
             }),
         ),
@@ -32,7 +32,7 @@ export const POST = withAuth(async (req, { session, params }) => {
 
     const current = await gh<{ name: string; color: string }[]>(
         session.token,
-        `/repos/${REPO}/issues/${params.n}/labels`,
+        `/repos/${repo}/issues/${params.n}/labels`,
     );
     if (!current.ok) return pass(current);
     const labels = current.data.map((l) => ({ name: l.name, color: l.color }));

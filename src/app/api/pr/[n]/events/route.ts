@@ -1,8 +1,8 @@
 import { withAuth, pass } from "@/lib/api";
-import { gh, REPO } from "@/lib/github";
+import { gh } from "@/lib/github";
 
-export const GET = withAuth(async (_req, { session, params }) => {
-    const res = await gh(session.token, `/repos/${REPO}/issues/${params.n}/events?per_page=100`);
+export const GET = withAuth(async (_req, { session, params, repo }) => {
+    const res = await gh(session.token, `/repos/${repo}/issues/${params.n}/events?per_page=100`);
     if (!res.ok) return pass(res);
     const raw = (res.data as Record<string, unknown>[]) || [];
     const events = raw.map((e) => ({

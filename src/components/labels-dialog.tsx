@@ -12,7 +12,7 @@ import {
     TextField,
     Typography,
 } from "@mui/material";
-import { api } from "@/lib/client";
+import { api, getActiveRepo, type RepoKey } from "@/lib/client";
 import type { PrLabel, RepoLabel } from "@/lib/types";
 
 const GROUPS: [string, (name: string) => boolean][] = [
@@ -22,7 +22,7 @@ const GROUPS: [string, (name: string) => boolean][] = [
     ["Other", () => true],
 ];
 
-let cachedRepoLabels: RepoLabel[] | null = null;
+const cachedRepoLabels = new Map<RepoKey, RepoLabel[]>();
 
 export function LabelsPicker({
     open,
@@ -37,7 +37,8 @@ export function LabelsPicker({
     autoFocus?: boolean;
     onLoadedChange?: (loaded: boolean) => void;
 }) {
-    const [all, setAll] = useState<RepoLabel[] | null>(cachedRepoLabels);
+    const activeRepo = getActiveRepo();
+    const [all, setAll] = useState<RepoLabel[] | null>(() => cachedRepoLabels.get(activeRepo) ?? null);
     const [query, setQuery] = useState("");
     const searchRef = useRef<HTMLInputElement>(null);
 
@@ -48,10 +49,14 @@ export function LabelsPicker({
     useEffect(() => {
         if (open) {
             setQuery("");
-            if (!all) {
-                api<RepoLabel[]>("/api/labels")
+            const cached = cachedRepoLabels.get(activeRepo);
+            if (cached) {
+                setAll(cached);
+            } else {
+                setAll(null);
+                api<RepoLabel[]>("/api/labels", { repo: activeRepo })
                     .then((list) => {
-                        cachedRepoLabels = list;
+                        cachedRepoLabels.set(activeRepo, list);
                         setAll(list);
                     })
                     .catch(() => setAll([]));
@@ -60,7 +65,7 @@ export function LabelsPicker({
                 setTimeout(() => searchRef.current?.focus(), 100);
             }
         }
-    }, [open, all, autoFocus]);
+    }, [open, activeRepo, autoFocus]);
 
     const grouped = useMemo(() => {
         if (!all) return [];

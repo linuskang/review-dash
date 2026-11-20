@@ -15,6 +15,8 @@ import {
     Snackbar,
     Alert,
     Stack,
+    Tab,
+    Tabs,
     Tooltip,
     Typography,
 } from "@mui/material";
@@ -30,7 +32,7 @@ import ReviewPanel from "./review-panel";
 import PreviewColumn from "./preview-column";
 import Wordmark from "./wordmark";
 import { useColorMode } from "./theme-registry";
-import { api } from "@/lib/client";
+import { api, setActiveRepo, type RepoKey } from "@/lib/client";
 import type { PrDetail, QueuePr } from "@/lib/types";
 
 interface Me {
@@ -40,6 +42,8 @@ interface Me {
 }
 
 interface ActionQueueItem {
+    id: string;
+    repo: RepoKey;
     number: number;
     title: string;
     htmlUrl: string;
@@ -48,8 +52,15 @@ interface ActionQueueItem {
     error?: string;
 }
 
+const REPO_TABS: { key: RepoKey; label: string; slug: string }[] = [
+    { key: "is-a.dev", label: "is-a.dev", slug: "is-a-dev/register" },
+    { key: "is-a.bot", label: "is-a.bot", slug: "free-domains/is-a.bot" },
+];
+
 export default function Dashboard() {
     const { mode, toggle } = useColorMode();
+    const [repo, setRepo] = useState<RepoKey>("is-a.dev");
+    const repoRef = useRef<RepoKey>("is-a.dev");
     const [me, setMe] = useState<Me | null>(null);
     const [prs, setPrs] = useState<QueuePr[]>([]);
     const [loading, setLoading] = useState(true);
@@ -60,9 +71,9 @@ export default function Dashboard() {
         null,
     );
     const [actionQueue, setActionQueue] = useState<ActionQueueItem[]>([]);
-    const inFlightSetRef = useRef<Set<number>>(new Set());
+    const inFlightSetRef = useRef<Set<string>>(new Set());
     const actionChainRef = useRef<Promise<void>>(Promise.resolve());
-    const dismissTimersRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+    const dismissTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
     useEffect(() => {
         const timers = dismissTimersRef.current;
@@ -72,13 +83,13 @@ export default function Dashboard() {
         };
     }, []);
 
-    const dismissQueueItem = useCallback((prNumber: number) => {
-        const timer = dismissTimersRef.current.get(prNumber);
+    const dismissQueueItem = useCallback((itemId: string) => {
+        const timer = dismissTimersRef.current.get(itemId);
         if (timer) {
             clearTimeout(timer);
-            dismissTimersRef.current.delete(prNumber);
+            dismissTimersRef.current.delete(itemId);
         }
-        setActionQueue((prev) => prev.filter((item) => item.number !== prNumber));
+        setActionQueue((prev) => prev.filter((item) => item.id !== itemId));
     }, []);
 
     const notify = useCallback(
@@ -91,27 +102,36 @@ export default function Dashboard() {
         setPrs((queue) => queue.map((p) => (p.number === n ? { ...p, ...patch } : p)));
     }, []);
 
-    const loadQueue = useCallback(async (silent = false) => {
-        if (!silent) setLoading(true);
-        try {
-            const list = await api<QueuePr[]>("/api/prs");
-            const visible = list.filter((p) => !inFlightSetRef.current.has(p.number));
-            setPrs(visible);
-            setSelected((sel) => {
-                if (sel && visible.some((p) => p.number === sel)) return sel;
-                return visible.length ? visible[0].number : null; // oldest open PR
-            });
-        } catch (e) {
-            notify(e instanceof Error ? e.message : "Failed to load queue", "error");
-        } finally {
-            if (!silent) setLoading(false);
-        }
-    }, [notify]);
+    const loadQueue = useCallback(
+        async (targetRepo: RepoKey = repoRef.current, silent = false) => {
+            if (!silent) setLoading(true);
+            try {
+                const list = await api<QueuePr[]>("/api/prs", { repo: targetRepo });
+                if (repoRef.current !== targetRepo) return;
+                const visible = list.filter(
+                    (p) => !inFlightSetRef.current.has(`${targetRepo}:${p.number}`),
+                );
+                setPrs(visible);
+                setSelected((sel) => {
+                    if (sel && visible.some((p) => p.number === sel)) return sel;
+                    return visible.length ? visible[0].number : null; // oldest open PR
+                });
+            } catch (e) {
+                if (repoRef.current === targetRepo) {
+                    notify(e instanceof Error ? e.message : "Failed to load queue", "error");
+                }
+            } finally {
+                if (!silent && repoRef.current === targetRepo) setLoading(false);
+            }
+        },
+        [notify],
+    );
 
     const loadPrDetail = useCallback(
-        async (n: number) => {
+        async (n: number, targetRepo: RepoKey = repoRef.current) => {
             try {
-                const detail = await api<PrDetail>(`/api/pr/${n}`);
+                const detail = await api<PrDetail>(`/api/pr/${n}`, { repo: targetRepo });
+                if (repoRef.current !== targetRepo) return;
                 setPrDetail(detail);
                 updateQueuePr(n, {
                     labels: detail.labels,
@@ -122,7 +142,7 @@ export default function Dashboard() {
                     authorAssociation: detail.authorAssociation,
                 });
             } catch {
-                setPrDetail(null);
+                if (repoRef.current === targetRepo) setPrDetail(null);
             }
         },
         [updateQueuePr],
@@ -140,21 +160,47 @@ export default function Dashboard() {
         [updateQueuePr],
     );
 
-    useEffect(() => {
-        if (selected) loadPrDetail(selected);
-        else setPrDetail(null);
-    }, [selected, loadPrDetail]);
+    const handleSwitchRepo = useCallback(
+        (nextRepo: RepoKey) => {
+            if (nextRepo === repoRef.current) return;
+            repoRef.current = nextRepo;
+            setActiveRepo(nextRepo);
+            setRepo(nextRepo);
+            window.localStorage.setItem("isd_repo", nextRepo);
+            setPrs([]);
+            setSelected(null);
+            setPrDetail(null);
+            loadQueue(nextRepo);
+        },
+        [loadQueue],
+    );
 
     useEffect(() => {
+        if (selected) loadPrDetail(selected, repo);
+        else setPrDetail(null);
+    }, [selected, repo, loadPrDetail]);
+
+    useEffect(() => {
+        const stored = window.localStorage.getItem("isd_repo");
+        const initialRepo: RepoKey = stored === "is-a.bot" ? "is-a.bot" : "is-a.dev";
+        repoRef.current = initialRepo;
+        setActiveRepo(initialRepo);
+        setRepo(initialRepo);
         api<Me>("/api/me").then(setMe).catch(() => {});
-        loadQueue();
+        loadQueue(initialRepo);
     }, [loadQueue]);
 
     /** Enqueue a background PR action (merge or close) and advance immediately without waiting for GitHub. */
     const enqueuePrAction = useCallback(
-        (pr: PrDetail, action: "merge" | "close", task: () => Promise<void>) => {
-            if (inFlightSetRef.current.has(pr.number)) return;
-            inFlightSetRef.current.add(pr.number);
+        (
+            pr: PrDetail,
+            action: "merge" | "close",
+            task: (targetRepo: RepoKey) => Promise<void>,
+        ) => {
+            const targetRepo = repoRef.current;
+            const itemId = `${targetRepo}:${pr.number}`;
+            if (inFlightSetRef.current.has(itemId)) return;
+            inFlightSetRef.current.add(itemId);
 
             const snapshot: QueuePr = prs.find((p) => p.number === pr.number) ?? {
                 number: pr.number,
@@ -176,15 +222,17 @@ export default function Dashboard() {
             setPrs((prev) => prev.filter((p) => p.number !== pr.number));
             setSelected((curSel) => (curSel === pr.number ? (target ? target.number : null) : curSel));
 
-            const existingTimer = dismissTimersRef.current.get(pr.number);
+            const existingTimer = dismissTimersRef.current.get(itemId);
             if (existingTimer) {
                 clearTimeout(existingTimer);
-                dismissTimersRef.current.delete(pr.number);
+                dismissTimersRef.current.delete(itemId);
             }
 
             setActionQueue((prev) => [
-                ...prev.filter((item) => item.number !== pr.number),
+                ...prev.filter((item) => item.id !== itemId),
                 {
+                    id: itemId,
+                    repo: targetRepo,
                     number: pr.number,
                     title: pr.title,
                     htmlUrl: pr.htmlUrl,
@@ -196,31 +244,31 @@ export default function Dashboard() {
             actionChainRef.current = actionChainRef.current.then(async () => {
                 setActionQueue((prev) =>
                     prev.map((item) =>
-                        item.number === pr.number
+                        item.id === itemId
                             ? { ...item, status: "running", error: undefined }
                             : item,
                     ),
                 );
                 try {
-                    await task();
-                    inFlightSetRef.current.delete(pr.number);
+                    await task(targetRepo);
+                    inFlightSetRef.current.delete(itemId);
                     setActionQueue((prev) =>
                         prev.map((item) =>
-                            item.number === pr.number ? { ...item, status: "succeeded" } : item,
+                            item.id === itemId ? { ...item, status: "succeeded" } : item,
                         ),
                     );
                     const timer = setTimeout(() => {
-                        dismissTimersRef.current.delete(pr.number);
+                        dismissTimersRef.current.delete(itemId);
                         setActionQueue((prev) =>
                             prev.filter(
                                 (item) =>
-                                    !(item.number === pr.number && item.status === "succeeded"),
+                                    !(item.id === itemId && item.status === "succeeded"),
                             ),
                         );
                     }, 5000);
-                    dismissTimersRef.current.set(pr.number, timer);
+                    dismissTimersRef.current.set(itemId, timer);
                 } catch (e) {
-                    inFlightSetRef.current.delete(pr.number);
+                    inFlightSetRef.current.delete(itemId);
                     const errorMessage =
                         e instanceof Error
                             ? e.message
@@ -229,16 +277,18 @@ export default function Dashboard() {
                               : "Failed to close";
                     setActionQueue((prev) =>
                         prev.map((item) =>
-                            item.number === pr.number
+                            item.id === itemId
                                 ? { ...item, status: "failed", error: errorMessage }
                                 : item,
                         ),
                     );
-                    setPrs((prev) => {
-                        if (prev.some((p) => p.number === pr.number)) return prev;
-                        return [...prev, snapshot].sort((a, b) => a.number - b.number);
-                    });
-                    setSelected((curSel) => (curSel === null ? pr.number : curSel));
+                    if (repoRef.current === targetRepo) {
+                        setPrs((prev) => {
+                            if (prev.some((p) => p.number === pr.number)) return prev;
+                            return [...prev, snapshot].sort((a, b) => a.number - b.number);
+                        });
+                        setSelected((curSel) => (curSel === null ? pr.number : curSel));
+                    }
                 }
             });
         },
@@ -247,16 +297,18 @@ export default function Dashboard() {
 
     const handleMergePr = useCallback(
         (pr: PrDetail, alreadyApproved: boolean) => {
-            enqueuePrAction(pr, "merge", async () => {
+            enqueuePrAction(pr, "merge", async (targetRepo) => {
                 if (!alreadyApproved) {
                     await api(`/api/pr/${pr.number}/review`, {
                         method: "POST",
                         body: JSON.stringify({ event: "APPROVE" }),
+                        repo: targetRepo,
                     });
                 }
                 await api(`/api/pr/${pr.number}/merge`, {
                     method: "POST",
                     body: JSON.stringify({ method: "merge" }),
+                    repo: targetRepo,
                 });
             });
         },
@@ -265,7 +317,7 @@ export default function Dashboard() {
 
     const handleClosePr = useCallback(
         (pr: PrDetail, selectedLabels: string[], comment: string) => {
-            enqueuePrAction(pr, "close", async () => {
+            enqueuePrAction(pr, "close", async (targetRepo) => {
                 const before = new Set((pr.labels || []).map((l) => l.name));
                 const toAdd = selectedLabels.filter((n) => !before.has(n));
                 const toRemove = [...before].filter((n) => !selectedLabels.includes(n));
@@ -273,11 +325,13 @@ export default function Dashboard() {
                     await api(`/api/pr/${pr.number}/labels`, {
                         method: "POST",
                         body: JSON.stringify({ add: toAdd, remove: toRemove }),
+                        repo: targetRepo,
                     });
                 }
                 await api(`/api/pr/${pr.number}/close`, {
                     method: "POST",
                     body: JSON.stringify({ comment: comment || undefined }),
+                    repo: targetRepo,
                 });
             });
         },
@@ -311,12 +365,46 @@ export default function Dashboard() {
             {/* Top bar */}
             <Stack
                 direction="row"
-                spacing={1.5}
+                spacing={2}
                 sx={{
                     alignItems: "center",
-                    px: 1
-                }}>
+                    px: 1,
+                }}
+            >
                 <Wordmark height={34} />
+                <Tabs
+                    value={repo}
+                    onChange={(_e, val: RepoKey) => handleSwitchRepo(val)}
+                    sx={{
+                        minHeight: 38,
+                        bgcolor: "surfaceContainerLow",
+                        borderRadius: "999px",
+                        p: 0.5,
+                        "& .MuiTabs-indicator": { display: "none" },
+                    }}
+                >
+                    {REPO_TABS.map((t) => (
+                        <Tooltip key={t.key} title={t.slug}>
+                            <Tab
+                                value={t.key}
+                                label={t.label}
+                                sx={{
+                                    minHeight: 32,
+                                    py: 0.5,
+                                    px: 2,
+                                    borderRadius: "999px",
+                                    fontWeight: 700,
+                                    fontSize: 13,
+                                    color: "text.secondary",
+                                    "&.Mui-selected": {
+                                        bgcolor: "secondaryContainer",
+                                        color: "onSecondaryContainer",
+                                    },
+                                }}
+                            />
+                        </Tooltip>
+                    ))}
+                </Tabs>
                 <Box sx={{ flex: 1 }} />
                 <Tooltip title={mode === "dark" ? "Light mode" : "Dark mode"}>
                     <IconButton onClick={toggle}>
@@ -353,7 +441,7 @@ export default function Dashboard() {
                     selected={selected}
                     onSelect={setSelected}
                     loading={loading}
-                    onRefresh={() => loadQueue()}
+                    onRefresh={() => loadQueue(repo)}
                 />
                 <Box sx={{ flex: "2 1 0", minWidth: 0, display: "flex", flexDirection: "column", minHeight: 0 }}>
                     {selected === null ? (
@@ -374,9 +462,10 @@ export default function Dashboard() {
                         </Stack>
                     ) : (
                         <ReviewPanel
+                            key={`${repo}:${selected}`}
                             prNumber={selected}
                             pr={prDetail && prDetail.number === selected ? prDetail : null}
-                            onRefreshPr={() => selected && loadPrDetail(selected)}
+                            onRefreshPr={() => selected && loadPrDetail(selected, repo)}
                             onSyncQueue={(patch) => selected && handleQueuePatch(selected, patch)}
                             onMerge={handleMergePr}
                             onClosePr={handleClosePr}
@@ -477,9 +566,11 @@ export default function Dashboard() {
                                             const isSucceeded = item.status === "succeeded";
                                             const isRunning = item.status === "running";
                                             const isMerge = item.action === "merge";
+                                            const repoPrefix =
+                                                item.repo !== repo ? `${item.repo} ` : "";
                                             return (
                                                 <motion.div
-                                                    key={item.number}
+                                                    key={item.id}
                                                     layout
                                                     initial={{ opacity: 0, y: -6, scale: 0.97 }}
                                                     animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -547,6 +638,7 @@ export default function Dashboard() {
                                                                     <>
                                                                         Failed to{" "}
                                                                         {isMerge ? "merge" : "close"}{" "}
+                                                                        {repoPrefix}
                                                                         <Link
                                                                             href={item.htmlUrl}
                                                                             target="_blank"
@@ -562,21 +654,21 @@ export default function Dashboard() {
                                                                     </>
                                                                 ) : isSucceeded ? (
                                                                     <>
-                                                                        {isMerge ? "Merged" : "Closed"} #
-                                                                        {item.number}
+                                                                        {isMerge ? "Merged" : "Closed"}{" "}
+                                                                        {repoPrefix}#{item.number}
                                                                     </>
                                                                 ) : isRunning ? (
                                                                     <>
                                                                         {isMerge
                                                                             ? "Merging"
                                                                             : "Closing"}{" "}
-                                                                        #{item.number}…
+                                                                        {repoPrefix}#{item.number}…
                                                                     </>
                                                                 ) : (
                                                                     <>
                                                                         Queued{" "}
-                                                                        {isMerge ? "merge" : "close"} #
-                                                                        {item.number}
+                                                                        {isMerge ? "merge" : "close"}{" "}
+                                                                        {repoPrefix}#{item.number}
                                                                     </>
                                                                 )}
                                                             </Typography>
@@ -606,7 +698,7 @@ export default function Dashboard() {
                                                                 <IconButton
                                                                     size="small"
                                                                     onClick={() =>
-                                                                        dismissQueueItem(item.number)
+                                                                        dismissQueueItem(item.id)
                                                                     }
                                                                     sx={{
                                                                         color: "inherit",

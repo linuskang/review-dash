@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server";
+import { resolveRepo } from "./github";
 import { getSession, type Session } from "./session";
 
 /** Route params after validation. `n` (when present) is guaranteed to be a positive integer string. */
 type Params = Record<string, string>;
 
-type Handler = (req: Request, ctx: { session: Session; params: Params }) => Promise<Response>;
+type Handler = (
+    req: Request,
+    ctx: { session: Session; params: Params; repo: string },
+) => Promise<Response>;
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
@@ -59,7 +63,8 @@ export function withAuth(handler: Handler) {
             if ("n" in params && !isPositiveInt(params.n)) {
                 return NextResponse.json({ error: "invalid_pr_number" }, { status: 400 });
             }
-            return await handler(req, { session, params });
+            const repo = resolveRepo(req);
+            return await handler(req, { session, params, repo });
         } catch (error) {
             if (error instanceof HttpError) {
                 return NextResponse.json({ error: error.code }, { status: error.status });
